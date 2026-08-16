@@ -146,6 +146,16 @@ namespace SoundBlocksMod
             rows.Add(new MapperType[] { TimeDependent, DistDependent });
             rows.Add(new MapperType[] { Translation, Rotation });
             rows.Add(new MapperType[] { BurnEffect, SpecialToggle });
+
+            // The sliders are listed too, one per row, purely to fix their order.
+            // Left alone the mapper interleaves them by widget type -- the two
+            // MValues land among the MSliders, giving min pitch, volume, max pitch,
+            // pitch, max dist. Naming them here puts them in reading order.
+            rows.Add(new MapperType[] { VolumeSlider });
+            rows.Add(new MapperType[] { PitchSlider });
+            rows.Add(new MapperType[] { MaxDist });
+            rows.Add(new MapperType[] { MinPitch });
+            rows.Add(new MapperType[] { MaxPitch });
             return rows;
         }
 

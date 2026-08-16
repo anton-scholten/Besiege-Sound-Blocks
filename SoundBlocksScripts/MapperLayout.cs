@@ -28,8 +28,14 @@ namespace SoundBlocksMod
     /// </summary>
     public static class MapperLayout
     {
-        /// <summary>Gap between the two columns, as a fraction of the row width.</summary>
-        private const float ColumnGap = 0.04f;
+        /// <summary>
+        /// Gap between the two columns, as a fraction of the row width. Zero on
+        /// purpose: the halved thing is the row's *backing plate*, not the button,
+        /// so any gap here shows as a lighter vertical seam of bare panel running
+        /// the height of the toggle block. The buttons carry their own inset, so
+        /// butting the plates together still leaves them visibly apart.
+        /// </summary>
+        private const float ColumnGap = 0f;
 
         /// <summary>
         /// Set false to leave the mapper stock and log its geometry instead, which
@@ -40,9 +46,19 @@ namespace SoundBlocksMod
 
         private static SoundBlocksBehaviour current;
         private static bool dumped;
-        private static GameObject voidObject;
-        private static bool voidWasActive;
-        private static bool loggedParts;
+
+        private class Piece
+        {
+            public Transform T;
+            public float FullLocalY;
+            public float FullPosY;
+            public float AppliedLocalY;
+            public float AppliedPosY;
+        }
+
+        private static readonly List<Piece> panel = new List<Piece>();
+        private static BlockMapper panelOwner;
+        private static Transform scrollbar;
 
         /// <summary>
         /// Driven once a frame by MapperLayoutHost, for the whole session.
@@ -75,6 +91,17 @@ namespace SoundBlocksMod
             current = block;
             block.EnsureVelocityMigrated();
 
+            // Rebuild the mapper here rather than letting its own LateUpdate do it.
+            // Showing or hiding a slider marks it dirty; LateUpdate then rebuilds
+            // every row back to stock *after* this has run, so the stock one-column
+            // layout is what gets drawn for that frame. Rebuild() ends by clearing
+            // IsDirty, so doing it first means LateUpdate finds nothing to do and
+            // the re-layout below lands before anything is drawn.
+            if (mapper.IsDirty)
+            {
+                mapper.Rebuild();
+            }
+
             if (Compact)
             {
                 Apply(mapper, block.LayoutRows());
@@ -88,13 +115,9 @@ namespace SoundBlocksMod
 
         private class Saved
         {
-            public ContainerDetails Row;
-            public Vector3 RowPos;
-            public float Top;
-            public float Bottom;
             public Transform Background;
-            public Vector3 BackgroundScale;
-            public bool HasBackground;
+            public float FullWidth;
+            public float HalvedWidth;
         }
 
         private static readonly List<Saved> saved = new List<Saved>();
@@ -106,7 +129,6 @@ namespace SoundBlocksMod
         /// </summary>
         public static void Apply(BlockMapper mapper, List<MapperType[]> rows)
         {
-            RestoreRows();
             if (mapper == null)
             {
                 return;
@@ -163,18 +185,21 @@ namespace SoundBlocksMod
             // width is already there would halve again on every frame until the
             // buttons vanished.
             float fullWidth = 0f;
+            float centreX = 0f;
             for (int i = 0; i < stack.Count; i++)
             {
                 Transform bg = stack[i].Background;
                 if (bg != null && bg.localScale.x > fullWidth)
                 {
                     fullWidth = bg.localScale.x;
+                    centreX = stack[i].transform.localPosition.x;
                 }
             }
 
             // Restack contiguously from where the stack already began, so the
             // header and anything above the toggles land exactly where they were.
             float cursor = stack[0].Top;
+
             for (int i = 0; i < output.Count; i++)
             {
                 ContainerDetails[] row = output[i];
@@ -194,7 +219,6 @@ namespace SoundBlocksMod
 
                 for (int j = 0; j < row.Length; j++)
                 {
-                    Record(row[j]);
                     row[j].Top = top;
                     row[j].Bottom = bottom;
                     SetWorldCentre(row[j], centre, scale, offset);
@@ -202,121 +226,159 @@ namespace SoundBlocksMod
 
                 if (row.Length == 2)
                 {
-                    SideBySide(row[0], row[1], fullWidth);
+                    SideBySide(row[0], row[1], fullWidth, centreX);
                 }
 
                 cursor = bottom;
             }
 
-            TrimVoid(mapper);
+            FitPanel(mapper, cursor);
         }
 
         /// <summary>
-        /// Hides the mapper's void-space filler.
+        /// Sits the panel's bottom edge on the bottom of the content, with its top
+        /// edge left where it is.
         ///
-        /// The dead strip under the sliders is Besiege's own: BlockMapper.
-        /// UpdateBackground sizes a "voidspace" mesh from its WidgetController's
-        /// EndPosition and Height, which still describe the tall stack the mapper
-        /// laid out before this restacked it. That extent cannot be corrected --
-        /// set_EndPosition is private and the controller itself is a private field
-        /// -- so the filler is switched off instead, and put back on close.
+        /// The panel is sized by `UpdateBackground` from its `WidgetController`'s
+        /// `EndPosition`, which always describes the *uncompacted* layout, so it
+        /// runs past the last row once this has restacked. `set_EndPosition` is
+        /// private and the controller is a private field, so the panel's own
+        /// objects are resized instead, found by name from a dump of the hierarchy.
+        ///
+        /// The target is absolute -- the content's own bottom edge -- and that is
+        /// the whole point. Every earlier attempt shrank by a *delta*, and each one
+        /// failed differently: shrinking by how far a pass moved things reads zero
+        /// once the rows are already compacted, even though the panel may have been
+        /// re-expanded since (which is exactly what showing or hiding a slider
+        /// does); and shrinking by the summed height difference is right only until
+        /// it is applied twice. A target computed from where the content actually
+        /// ends cannot go stale or compound, whatever order things happen in.
+        ///
+        /// Fitting the bottom to the content, rather than merely lifting it, is
+        /// also what settles the scrollbar: Besiege's own layout leaves the content
+        /// hanging slightly below the panel, so a panel that only moves up by the
+        /// height saved still overflows and still shows room below.
         /// </summary>
-        private static void TrimVoid(BlockMapper mapper)
+        private static void FitPanel(BlockMapper mapper, float contentBottom)
         {
-            if (voidObject == null)
+            if (panelOwner != mapper)
             {
-                Transform[] all = mapper.GetComponentsInChildren<Transform>(true);
-                for (int i = 0; i < all.Length; i++)
-                {
-                    string n = all[i].name.ToLower();
-                    if (n.Contains("void"))
-                    {
-                        voidObject = all[i].gameObject;
-                        break;
-                    }
-                }
-                if (voidObject == null)
-                {
-                    LogPanelPartsOnce(mapper);
-                    return;
-                }
+                panelOwner = mapper;
+                panel.Clear();
+                Transform root = mapper.transform;
+                AddPiece(root.Find("Background"));
+                AddPiece(root.Find("Container/Mask"));
+                scrollbar = root.Find("Container/Scrollbar");
             }
-            if (voidObject.activeSelf)
-            {
-                voidWasActive = true;
-                voidObject.SetActive(false);
-            }
-        }
 
-        /// <summary>
-        /// Names every non-row object under the mapper, once, so the void filler
-        /// can be identified if it is not called "void". Only runs when the search
-        /// above failed.
-        /// </summary>
-        private static void LogPanelPartsOnce(BlockMapper mapper)
-        {
-            if (loggedParts)
+            // Nothing scrolls any more, so the bar is only clutter. It is the
+            // mapper's own object, shared with every block, so Restore puts it back.
+            if (scrollbar != null && scrollbar.gameObject.activeSelf)
             {
-                return;
+                scrollbar.gameObject.SetActive(false);
             }
-            loggedParts = true;
-            Transform[] all = mapper.GetComponentsInChildren<Transform>(true);
-            Debug.Log("[SB layout] no void object found; mapper children:");
-            for (int i = 0; i < all.Length; i++)
+
+            for (int i = 0; i < panel.Count; i++)
             {
-                Transform t = all[i];
-                if (t.GetComponent<ContainerDetails>() != null)
+                Piece p = panel[i];
+                if (p.T == null)
                 {
                     continue;
                 }
-                Debug.Log("[SB layout]   " + t.name
-                    + " active=" + t.gameObject.activeSelf
-                    + " pos=" + t.position.y
-                    + " scale=" + t.localScale.y
-                    + " renderer=" + (t.GetComponent<Renderer>() != null));
+
+                // Anything but our own last write means the game has resized it --
+                // that is the full size to measure from now.
+                if (Mathf.Abs(p.T.localScale.y - p.AppliedLocalY) > 0.0001f ||
+                    Mathf.Abs(p.T.position.y - p.AppliedPosY) > 0.0001f)
+                {
+                    p.FullLocalY = p.T.localScale.y;
+                    p.FullPosY = p.T.position.y;
+                }
+
+                float localY = p.T.localScale.y;
+                if (localY < 0.0001f && localY > -0.0001f)
+                {
+                    continue;
+                }
+                // The parent chain's scale, so no factor is assumed anywhere.
+                float chain = p.T.lossyScale.y / localY;
+                float fullHeight = p.FullLocalY * chain;
+                float topEdge = p.FullPosY + fullHeight * 0.5f;
+
+                float wanted = topEdge - contentBottom;
+                if (wanted <= 0.0001f)
+                {
+                    continue;
+                }
+                // No clamp to the game's own height: the panel grows as well as
+                // shrinks, so adding a slider extends the window downwards instead
+                // of scrolling. Clamping here is what left the panel untouched
+                // whenever a newly shown slider pushed the content past it.
+
+                float newLocalY = p.FullLocalY * wanted / fullHeight;
+                float newPosY = topEdge - wanted * 0.5f;
+
+                Vector3 ls = p.T.localScale;
+                p.T.localScale = new Vector3(ls.x, newLocalY, ls.z);
+                Vector3 pos = p.T.position;
+                p.T.position = new Vector3(pos.x, newPosY, pos.z);
+
+                p.AppliedLocalY = newLocalY;
+                p.AppliedPosY = newPosY;
             }
         }
 
+        private static void AddPiece(Transform t)
+        {
+            if (t == null)
+            {
+                return;
+            }
+            Piece p = new Piece();
+            p.T = t;
+            p.FullLocalY = t.localScale.y;
+            p.FullPosY = t.position.y;
+            p.AppliedLocalY = float.NaN;     // nothing applied yet
+            p.AppliedPosY = float.NaN;
+            panel.Add(p);
+        }
+
         /// <summary>
-        /// Full teardown: rows back as the mapper built them, and the void filler
-        /// switched back on. Called when the mapper stops showing a Sound Block.
+        /// Undoes the one change that outlives us: a halved row plate.
+        ///
+        /// Positions are deliberately NOT restored. The mapper pools its rows, so
+        /// by the time this runs the containers we recorded may already have been
+        /// rebuilt into some other block's mapper -- writing our remembered
+        /// Top/Bottom onto those is what left the Cannon's rows strewn down its
+        /// panel. Positions need no undo anyway: the mapper lays every row out
+        /// itself on the next Rebuild, and Apply is idempotent.
+        ///
+        /// A width does need undoing, because nothing else sets it back. It is
+        /// reverted only where the plate is still carrying the halved value, so a
+        /// container already reused elsewhere is left alone.
         /// </summary>
         public static void Restore()
-        {
-            RestoreRows();
-
-            // The void filler is the mapper's own object, shared with every other
-            // block, so it has to go back on.
-            if (voidObject != null && voidWasActive)
-            {
-                voidObject.SetActive(true);
-            }
-            voidWasActive = false;
-            voidObject = null;
-            loggedParts = false;
-        }
-
-        /// <summary>
-        /// Rows only. Apply calls this each pass; touching the void filler here
-        /// would switch it off and on again every frame.
-        /// </summary>
-        private static void RestoreRows()
         {
             for (int i = 0; i < saved.Count; i++)
             {
                 Saved s = saved[i];
-                if (s.Row != null)
+                if (s.Background == null)
                 {
-                    s.Row.Top = s.Top;
-                    s.Row.Bottom = s.Bottom;
-                    s.Row.transform.localPosition = s.RowPos;
+                    continue;
                 }
-                if (s.HasBackground && s.Background != null)
+                Vector3 now = s.Background.localScale;
+                if (Mathf.Abs(now.x - s.HalvedWidth) < 0.001f)
                 {
-                    s.Background.localScale = s.BackgroundScale;
+                    s.Background.localScale = new Vector3(s.FullWidth, now.y, now.z);
                 }
             }
             saved.Clear();
+            if (scrollbar != null)
+            {
+                scrollbar.gameObject.SetActive(true);
+            }
+            scrollbar = null;
+            panelOwner = null;
         }
 
         // ---- placement -------------------------------------------------------
@@ -379,7 +441,7 @@ namespace SoundBlocksMod
         /// Halves two rows and sets them in two columns. Widths and offsets are the
         /// one thing done in local units, because Background.localScale is local.
         /// </summary>
-        private static void SideBySide(ContainerDetails left, ContainerDetails right, float width)
+        private static void SideBySide(ContainerDetails left, ContainerDetails right, float width, float centre)
         {
             Transform lbg = left.Background;
             Transform rbg = right.Background;
@@ -391,15 +453,22 @@ namespace SoundBlocksMod
             float half = (width - width * ColumnGap) * 0.5f;
             float shift = (width - half) * 0.5f;
 
+            RecordHalved(lbg, width, half);
+            RecordHalved(rbg, width, half);
+
             Vector3 ls = lbg.localScale;
             lbg.localScale = new Vector3(half, ls.y, ls.z);
             Vector3 rs = rbg.localScale;
             rbg.localScale = new Vector3(half, rs.y, rs.z);
 
+            // Both columns are placed against `centre`, which comes from a row this
+            // never moves. Reading the moved row's own x instead shifts it again on
+            // every pass, and since Apply runs every frame the columns march off the
+            // panel within a second.
             Vector3 lp = left.transform.localPosition;
-            left.transform.localPosition = new Vector3(lp.x - shift, lp.y, lp.z);
+            left.transform.localPosition = new Vector3(centre - shift, lp.y, lp.z);
             Vector3 rp = right.transform.localPosition;
-            right.transform.localPosition = new Vector3(lp.x + shift, rp.y, rp.z);
+            right.transform.localPosition = new Vector3(centre + shift, rp.y, rp.z);
         }
 
         /// <summary>Moves a row so its world-space midpoint lands on <paramref name="centre"/>.</summary>
@@ -485,28 +554,23 @@ namespace SoundBlocksMod
             return false;
         }
 
-        private static void Record(ContainerDetails c)
+        /// <summary>Notes a plate this halved, so Restore can put its width back.</summary>
+        private static void RecordHalved(Transform background, float full, float halved)
         {
             for (int i = 0; i < saved.Count; i++)
             {
-                if (saved[i].Row == c)
+                if (saved[i].Background == background)
                 {
-                    return;             // already recorded this open
+                    return;
                 }
             }
             Saved s = new Saved();
-            s.Row = c;
-            s.RowPos = c.transform.localPosition;
-            s.Top = c.Top;
-            s.Bottom = c.Bottom;
-            s.Background = c.Background;
-            s.HasBackground = c.Background != null;
-            if (s.HasBackground)
-            {
-                s.BackgroundScale = c.Background.localScale;
-            }
+            s.Background = background;
+            s.FullWidth = full;
+            s.HalvedWidth = halved;
             saved.Add(s);
         }
+
 
         // ---- diagnostics -----------------------------------------------------
 

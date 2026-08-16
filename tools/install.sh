@@ -1,20 +1,38 @@
 #!/usr/bin/env bash
 #
-# Builds the mod and installs it into Besiege, so it can be tried in the game.
+# Installs the mod into Besiege.
 #
-#   ./tools/install.sh            build, then copy into Besiege_Data/Mods/SoundBlocks
-#   ./tools/install.sh --no-build install what is already built
+#   ./tools/install.sh            build, then symlink the mod (best for
+#                                 development -- a rebuild is picked up by the
+#                                 next game start, with no reinstall)
+#   ./tools/install.sh --copy     build, then copy instead (for handing someone
+#                                 a folder, or if symlinks are awkward)
+#   ./tools/install.sh --uninstall  remove it again
+#   ./tools/install.sh --no-build  skip the build step
 #
-# Besiege reads mods once at startup, so the game has to be restarted afterwards.
+# Besiege reads mods once at startup, so restart the game afterwards.
 # Set BESIEGE_DIR if the install is not auto-detected.
+#
+# Unlike the sibling mods, the folder Besiege loads *is* the repository root --
+# that is what gets uploaded to the Workshop -- so the link points at the whole
+# checkout. Besiege only reads what Mod.xml names, so the sources and working
+# files alongside it are ignored.
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC="$REPO_DIR"
 
-if [[ "${1:-}" != "--no-build" ]]; then
-    "$REPO_DIR/tools/build.sh"
-fi
+MODE="link"
+BUILD=1
+for arg in "$@"; do
+    case "$arg" in
+        --uninstall) MODE="uninstall"; BUILD=0 ;;
+        --copy)      MODE="copy" ;;
+        --no-build)  BUILD=0 ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
 
 find_besiege() {
     if [[ -n "${BESIEGE_DIR:-}" ]]; then echo "$BESIEGE_DIR"; return; fi
@@ -41,21 +59,53 @@ if ! BESIEGE="$(find_besiege)"; then
     exit 1
 fi
 
-DEST="$BESIEGE/Besiege_Data/Mods/SoundBlocks"
+MODS="$BESIEGE/Besiege_Data/Mods"
+DEST="$MODS/SoundBlocks"
+
+if [[ "$MODE" == "uninstall" ]]; then
+    if [[ -L "$DEST" ]]; then
+        rm "$DEST"
+        echo "Removed symlink $DEST"
+    elif [[ -d "$DEST" ]]; then
+        rm -rf "$DEST"
+        echo "Removed $DEST"
+    else
+        echo "Nothing installed at $DEST"
+    fi
+    exit 0
+fi
+
+if [[ $BUILD -eq 1 ]]; then
+    "$REPO_DIR/tools/build.sh"
+fi
 
 if [[ ! -f "$REPO_DIR/SoundBlocks.dll" ]]; then
     echo "SoundBlocks.dll is missing; run ./tools/build.sh first." >&2
     exit 1
 fi
 
-# Only the files the game loads. Everything else in the repo -- the sources, the
-# tools, the promo art, the unpacked sound library -- is not part of the mod.
-mkdir -p "$DEST"
-cp "$REPO_DIR/Mod.xml" "$REPO_DIR/SoundBlock.xml" "$REPO_DIR/SoundBlocks.dll" "$DEST/"
-rm -rf "$DEST/Resources"
-cp -r "$REPO_DIR/Resources" "$DEST/"
+mkdir -p "$MODS"
+# Replace whatever is there, whichever kind it is, then install.
+[[ -L "$DEST" ]] && rm "$DEST"
+[[ -d "$DEST" ]] && rm -rf "$DEST"
 
-echo "Installed to $DEST"
+if [[ "$MODE" == "copy" ]]; then
+    mkdir -p "$DEST"
+    cp "$REPO_DIR/Mod.xml" "$REPO_DIR/SoundBlock.xml" "$REPO_DIR/SoundBlocks.dll" "$DEST/"
+    cp -r "$REPO_DIR/Resources" "$DEST/"
+    echo "Copied mod to $DEST"
+else
+    ln -s "$SRC" "$DEST"
+    echo "Linked $DEST -> $SRC"
+fi
+
 if pgrep -x Besiege >/dev/null 2>&1 || pgrep -f 'Besiege\.x86' >/dev/null 2>&1; then
     echo "Besiege is running; restart it to pick this up."
 fi
+
+cat <<'EOF'
+
+Note: the game writes the generated mod ID into Mod.xml the first time it loads
+the mod. With a symlink that write lands in your working copy, which is what you
+want -- <ID> is meant to stay stable for the life of the mod, so commit it.
+EOF

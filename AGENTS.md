@@ -179,12 +179,23 @@ fields.
 **Restore on close.** The mapper pools its rows, so a row left half-width comes
 back half-width in the next block's mapper, base-game blocks included.
 
-**Re-apply every frame.** `BlockMapper.LateUpdate` calls `Rebuild()` whenever the
-mapper is dirty — which showing or hiding a slider makes it — and a rebuild puts
-every row back at its stock position. That is why `Apply` must stay
-**idempotent**: it restacks from measured values and takes the column width from
-the widest *unpaired* row, never by halving whatever it finds. Halving relatively
-would halve again every frame until the buttons vanished.
+**Re-apply every frame, and rebuild first.** `BlockMapper.LateUpdate` calls
+`Rebuild()` whenever the mapper is dirty — which showing or hiding a slider makes
+it — putting every row back at stock *after* `Tick` has run, so that frame draws
+the one-column layout. `Tick` therefore calls `Rebuild()` itself when `IsDirty`;
+it ends by clearing the flag, so `LateUpdate` finds nothing to do and the
+re-layout lands before anything is drawn. `Apply` must also stay **idempotent**:
+it restacks from measured values and takes the column width from the widest
+*unpaired* row, never by halving whatever it finds — halving relatively would
+halve again every frame until the buttons vanished.
+
+**`ColumnGap` is 0.** What gets halved is the row's backing plate, not the
+button, so any gap shows as a lighter seam of bare panel down the middle of the
+toggle block. The buttons have their own inset, so butted plates still look
+separated.
+
+**`LayoutRows` lists the sliders too**, one per row. That is only to fix their
+order: left alone the mapper interleaves `MValue`s among the `MSlider`s.
 
 **Drive it from `MapperLayoutHost`, not from the block.** Unity stops a
 MonoBehaviour's coroutines when it is disabled, which is what happens to
@@ -200,15 +211,53 @@ midpoint, `Height` the difference. But `localPosition` is in a *different* scale
 measures the mapping from two real rows and converts back only at the end; widths
 alone stay local.
 
-### The dead strip under the sliders
+### The panel sizes itself to its content; nothing scrolls
 
-`BlockMapper.UpdateBackground` sizes a "voidspace" mesh from its
-`WidgetController`'s `EndPosition` and `Height`, which still describe the taller
-stack the mapper laid out before this restacked it. That extent cannot be
-corrected — `set_EndPosition` is private and the controller is a private field —
-so `TrimVoid` switches the filler off instead and `Restore` puts it back. If the
-object is not found by name it logs the mapper's children once, so the right
-name can be picked out of `Player.log`.
+`UpdateBackground` sizes the panel from its `WidgetController`'s `EndPosition`,
+which always describes the *uncompacted* layout. `set_EndPosition` is private and
+the controller is a private field, so `FitPanel` resizes the panel's own objects
+instead — `Background` and `Container/Mask`, found by name from a dump of the
+hierarchy — and hides `Container/Scrollbar`, since with the window fitted there
+is nothing left to scroll. `lossyScale` carries the parent chain, so no scale
+factor is hardcoded.
+
+**The target is the content's own bottom edge, and the fit grows as well as
+shrinks.** Both halves were learned the hard way:
+
+- Every delta-based attempt failed. Shrinking by how far a pass moved things
+  reads zero once the rows are already compacted — even though the panel may
+  have been re-expanded since, which is exactly what showing or hiding a slider
+  does. Shrinking by the summed height difference is right only until it is
+  applied twice. A target taken from where the content actually ends can neither
+  go stale nor compound.
+- Clamping the fit to the game's own panel height meant a newly shown slider
+  that pushed the content past it was ignored entirely, which is what left
+  Distance, Translation and Rotation looking broken. Without the clamp the window
+  simply extends downwards instead.
+
+Each piece is still driven from its remembered *full* size, re-read whenever the
+game has written to it since the last pass, so running every frame is stable.
+
+### Never restore a row's position
+
+The mapper **pools** its rows. By the time `Restore` runs, the containers it
+recorded may already have been rebuilt into another block's mapper — writing
+remembered `Top`/`Bottom` onto those is what once left the Cannon's rows strewn
+down its panel. Positions need no undo: the mapper lays every row out itself on
+the next `Rebuild`, and `Apply` is idempotent.
+
+A halved *width* does need undoing, because nothing else sets it back, and it is
+reverted only where the plate still carries the halved value.
+
+**Every write in `Apply` must be absolute.** It runs each frame with no restore
+before it, so anything computed from a value it previously wrote compounds. This
+has bitten twice: reading the moved row's own `x` as the column centre marched
+the columns a quarter-width left per frame until they left the panel entirely,
+and halving whatever width was found would have halved it again every frame. The
+centre and the width both come from a row that is never moved; positions come
+from `Top`/`Bottom` recomputed from the stack each pass; and the panel shrink is
+driven by a saved height that measures as zero once the stack is already
+compacted.
 
 ### When it goes wrong, measure
 

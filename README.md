@@ -10,6 +10,10 @@ on fire and it winds up and dies like a real speaker.
 
 Multiplayer works — everyone hears everyone's blocks.
 
+The block's options pane sizes itself to whatever is showing: turning on Distance
+or a velocity mode adds its slider and the window grows to suit, and it shrinks
+again when they go.
+
 ## Using it
 
 Place the block, open the block mapper, and set:
@@ -55,10 +59,18 @@ change the code. There is no .NET toolchain to install — the build uses
 Besiege's own compiler:
 
 ```sh
-./tools/build.sh          # compile SoundBlocks.dll
-./tools/verify-build.sh   # compile without overwriting it
-./tools/install.sh        # build, then copy into your Besiege install
+./tools/build.sh            # compile SoundBlocks.dll
+./tools/verify-build.sh     # compile without overwriting it
+./tools/install.sh          # build, then symlink into your Besiege install
+./tools/install.sh --copy   # copy instead of linking
+./tools/install.sh --uninstall
 ```
+
+The default is a symlink, so a rebuild is picked up by the next game start with
+no reinstall. One consequence worth knowing: the game writes the generated `<ID>`
+into `Mod.xml` the first time it loads the mod, and with a symlink that write
+lands in your working copy — which is what you want, since the ID is meant to
+stay stable for the life of the mod.
 
 Set `BESIEGE_DIR` if your install is somewhere the scripts do not look. Besiege
 reads mods once at startup, so restart the game to pick up a new build.
