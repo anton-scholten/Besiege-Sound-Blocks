@@ -23,7 +23,7 @@ Place the block, open the block mapper, and set:
 | **Loop** | repeat until stopped |
 | **TimeScale** | pitch follows the game's slow-motion |
 | **Distance** | falls off with distance instead of being heard everywhere; **Max Dist** sets how far |
-| **Velocity** | pitch rises with speed, between **Min** and **Max velocity pitch**, from either translation or rotation |
+| **Translation**, **Rotation** | pitch rises with how fast the block moves, or how fast it spins. Either one shows **Min** and **Max velocity pitch**; with both on, the livelier motion drives the sound |
 | **Burn effect** | the block winds up and gives out while on fire |
 | **Special Mode** | a three-clip engine: start on press, a loop while held, and a shutdown on release |
 

@@ -58,13 +58,34 @@ namespace SoundBlocksMod
         private List<string> SoundNames = new List<string>();
         private List<string> ModeNames = new List<string>();
 
+        // Read directly rather than through ModBlockBehaviour.IsBurning. That
+        // property is handler.fireController.onFire, and the handler fills
+        // fireController in with a GetComponent on the block's *root* only --
+        // whereas BlockPrefabCreator.SetupFire configures the one it finds on the
+        // child transform named "FireController". When those are not the same
+        // object the property is false for the whole simulation and the burn
+        // effect never fires. GetComponentInChildren covers both placements.
+        private FireController fireController;
+        private bool searchedForFire;
+
         private Vector3 prevPos;
         private Vector3 velocityVector;
-        private MToggle VeloDependent;
         private MValue MinPitch;
         private MValue MaxPitch;
         private MSlider MaxDist;
+
+        // The velocity effect is two toggles now. Either one on enables it, and
+        // with both on the livelier of the two motions drives the pitch.
+        private MToggle Translation;
+        private MToggle Rotation;
+
+        // Superseded by Translation/Rotation and never shown. They stay
+        // registered because the released 0.1.5 stored its velocity settings under
+        // these keys, and an unregistered mapper entry is not deserialised at all
+        // -- so dropping them would lose the setting rather than carry it over.
+        private MToggle VeloDependent;
         private MMenu VeloTraRot;
+        private bool migratedVelocity;
 
         public override void SafeAwake()
         {
@@ -81,9 +102,15 @@ namespace SoundBlocksMod
             Loop = AddToggle("Loop", "Loop", false);
             TimeDependent = AddToggle("TimeScale", "TimeDependent", true);
             DistDependent = AddToggle("Distance", "DistDependent", true);
-            VeloDependent = AddToggle("Velocity", "VeloDependent", false);
+            Translation = AddToggle("Translation", "TranslationKey", false);
+            Rotation = AddToggle("Rotation", "RotationKey", false);
             BurnEffect = AddToggle("Burn effect", "BurnEffect", true);
             SpecialToggle = AddToggle("Special Mode", "SpecialToggle", false);
+
+            // Registered only so 0.1.7-and-earlier machines still deserialise;
+            // MigrateVelocity reads them and they are never shown.
+            VeloDependent = AddToggle("Velocity", "VeloDependent", false);
+            VeloDependent.DisplayInMapper = false;
 
             MenuHandler();
 
@@ -91,10 +118,35 @@ namespace SoundBlocksMod
             MaxPitch = AddValue("Max velocity pitch", "MaxPitchKey", 1.5f);
             MaxDist = AddSlider("Max Dist", "MaxDistKey", 250f, 0f, 500f);
             VeloTraRot = AddMenu("VeloTraRotKey", 0, new List<string> { "Translation", "Rotation" }, false);
+            VeloTraRot.DisplayInMapper = false;
 
             DistDependent.Toggled += new ToggleHandler(DistanceDep);
-            VeloDependent.Toggled += new ToggleHandler(VelocityDep);
+            Translation.Toggled += new ToggleHandler(VelocityDep);
+            Rotation.Toggled += new ToggleHandler(VelocityDep);
             SpecialToggle.Toggled += new ToggleHandler(SpecialMode);
+
+            // Not MigrateVelocity() here: SafeAwake runs before the machine's saved
+            // data is deserialised into the mapper, so it would read defaults, find
+            // nothing to carry over, and set the guard that stops the real
+            // migration from ever running. It is driven from OnSimulateStart and
+            // from opening the mapper, both of which are after the load.
+            VelocityDep(false);
+
+        }
+
+        /// <summary>
+        /// The mapper's rows, top to bottom. A pair shares a row; a single keeps
+        /// one to itself. Sliders, values and menus are left where the mapper put
+        /// them.
+        /// </summary>
+        public List<MapperType[]> LayoutRows()
+        {
+            List<MapperType[]> rows = new List<MapperType[]>();
+            rows.Add(new MapperType[] { PushToggle, Loop });
+            rows.Add(new MapperType[] { TimeDependent, DistDependent });
+            rows.Add(new MapperType[] { Translation, Rotation });
+            rows.Add(new MapperType[] { BurnEffect, SpecialToggle });
+            return rows;
         }
 
         /// <summary>
@@ -105,15 +157,21 @@ namespace SoundBlocksMod
         {
             // Both lists are marked [CanBeEmpty], so a block XML is allowed to
             // declare neither, and the loader leaves the array null in that case.
+            //
+            // Exactly one entry per declared sound, always, even when the resource
+            // does not resolve. A machine stores its choice as an *index* into this
+            // list, so silently dropping an entry would shift every sound after it
+            // and repoint saved blocks at the wrong clip. The reference's own Name
+            // is the same string ModResource.GetAudioClip wants, so the fallback
+            // still plays if the resource turns up later.
             if (Module.Sounds != null)
             {
                 foreach (object sound in Module.Sounds)
                 {
-                    ModAudioClip clip = GetResource((Modding.Serialization.ResourceReference)sound) as ModAudioClip;
-                    if (clip != null)
-                    {
-                        SoundNames.Add(clip.Name);
-                    }
+                    Modding.Serialization.ResourceReference reference =
+                        (Modding.Serialization.ResourceReference)sound;
+                    ModAudioClip clip = GetResource(reference) as ModAudioClip;
+                    SoundNames.Add(clip != null ? clip.Name : reference.Name);
                 }
             }
             SoundFileMenu = AddMenu("SoundMenuKey", 0, SoundNames, false);
@@ -129,11 +187,23 @@ namespace SoundBlocksMod
         }
 
         /// <summary>
-        /// A menu's saved index is deserialised straight out of the machine file
-        /// with no bounds check, and MMenu.Selection indexes its list unchecked --
-        /// so a machine saved when the menu was a different length would throw here
-        /// rather than in anything that could report it. Returns -1 for an empty
-        /// menu, which every caller treats as "nothing to play".
+        /// Turns a menu's saved index into one this block's list can be indexed by.
+        /// Returns -1 for an empty menu, which every caller treats as "nothing to
+        /// play".
+        ///
+        /// Two things make this necessary. MMenu.DeSerialize writes the saved index
+        /// with no bounds check and MMenu.Selection is an unchecked _items[Value],
+        /// so an out-of-range index throws out of SimulateUpdateAlways where
+        /// nothing can report it. And machines saved by 0.1.5 or earlier *are*
+        /// out of range: the menu list was static and every block's SafeAwake
+        /// appended the whole clip list to it again, so a machine with three sound
+        /// blocks built a list of three identical copies and the third block's
+        /// selection was stored as an index into the third copy.
+        ///
+        /// The repair is a modulo, not a clamp. Because the old list was this exact
+        /// list repeated, index 61 of a 3x28 list and index 5 of a 28 list are the
+        /// same sound -- so `value % Count` recovers the clip the machine was saved
+        /// with, where clamping would silently substitute the last one in the menu.
         /// </summary>
         private static int MenuIndex(MMenu menu, List<string> items)
         {
@@ -146,11 +216,13 @@ namespace SoundBlocksMod
             {
                 return 0;
             }
-            if (value >= items.Count)
-            {
-                return items.Count - 1;
-            }
-            return value;
+            return value % items.Count;
+        }
+
+        /// <summary>True when either motion source is driving the pitch.</summary>
+        private bool VelocityActive
+        {
+            get { return Translation.IsActive || Rotation.IsActive; }
         }
 
         // Special Mode replaces the single-clip controls with the mode menu.
@@ -167,11 +239,53 @@ namespace SoundBlocksMod
             MaxDist.DisplayInMapper = toggleState;
         }
 
+        /// <summary>
+        /// Both velocity toggles land here, so the pitch limits follow "either one
+        /// is on" rather than whichever was clicked last. The argument is ignored
+        /// for that reason.
+        /// </summary>
         private void VelocityDep(bool toggleState)
         {
-            MinPitch.DisplayInMapper = toggleState;
-            MaxPitch.DisplayInMapper = toggleState;
-            VeloTraRot.DisplayInMapper = toggleState;
+            bool active = VelocityActive;
+            MinPitch.DisplayInMapper = active;
+            MaxPitch.DisplayInMapper = active;
+        }
+
+        /// <summary>
+        /// Carries a machine saved by the released 0.1.5 onto the two velocity
+        /// toggles that replaced the Velocity toggle and its Translation/Rotation
+        /// menu. Runs once, and only while the new toggles are untouched, so a
+        /// re-saved machine is never second-guessed.
+        /// </summary>
+        public void EnsureVelocityMigrated()
+        {
+            if (migratedVelocity)
+            {
+                return;
+            }
+            migratedVelocity = true;
+
+            if (!VeloDependent.IsActive)
+            {
+                return;             // velocity was off, nothing to carry over
+            }
+            if (!Translation.isDefaultValue || !Rotation.isDefaultValue)
+            {
+                return;             // already set on this machine; leave it alone
+            }
+
+            // The old menu was exclusive: entry 0 Translation, entry 1 Rotation.
+            if (VeloTraRot.Value == 0)
+            {
+                Translation.IsActive = true;
+            }
+            else
+            {
+                Rotation.IsActive = true;
+            }
+            // Setting IsActive directly does not raise Toggled, so the pitch
+            // limits have to be shown by hand.
+            VelocityDep(true);
         }
 
         /// <summary>
@@ -194,6 +308,37 @@ namespace SoundBlocksMod
             PlayingToggleAudio = false;
             SpecialFlag = false;
             prevPos = gameObject.transform.position;
+            // Look the FireController up again: the block is re-prefabbed between
+            // runs, so a reference cached in an earlier one can be stale.
+            searchedForFire = false;
+            fireController = null;
+            NormaliseMenus();
+            EnsureVelocityMigrated();
+        }
+
+        /// <summary>
+        /// Writes a repaired index back into the menus themselves, so a machine
+        /// saved by 0.1.5 or earlier stops carrying an out-of-range one around.
+        /// MenuIndex already copes at every read; doing it here as well is what
+        /// makes the mapper show the right entry and makes re-saving the machine
+        /// write an index the next load will not have to repair.
+        ///
+        /// This runs at simulation start rather than in SafeAwake on purpose: the
+        /// block's saved data is deserialised into the mapper after SafeAwake, so
+        /// there would be nothing to repair yet.
+        /// </summary>
+        private void NormaliseMenus()
+        {
+            int sound = MenuIndex(SoundFileMenu, SoundNames);
+            if (sound >= 0 && SoundFileMenu.Value != sound)
+            {
+                SoundFileMenu.SetValue(sound);
+            }
+            int mode = MenuIndex(SpecialMenu, ModeNames);
+            if (mode >= 0 && SpecialMenu.Value != mode)
+            {
+                SpecialMenu.SetValue(mode);
+            }
         }
 
         public override void SimulateUpdateAlways()
@@ -273,22 +418,38 @@ namespace SoundBlocksMod
             source_audio.pitch = PitchSlider.Value * PitchFactor;
             source_audio.pitch = source_audio.pitch * (TimeDependent.IsActive ? Time.timeScale : 1f);
 
-            if (VeloDependent.IsActive)
+            // Differentiate the block's own position every frame whether or not
+            // Translation is on, so switching it on mid-simulation does not read a
+            // stale prevPos as one enormous jump. deltaTime is zero at timeScale 0,
+            // which would make this infinite.
+            if (Time.deltaTime > 0f)
             {
-                float velocityPitch;
-                if (VeloTraRot.isDefaultValue)
+                velocityVector = (gameObject.transform.position - prevPos) / Time.deltaTime;
+                prevPos = gameObject.transform.position;
+            }
+
+            if (VelocityActive)
+            {
+                float velocityPitch = 0f;
+                if (Translation.IsActive)
                 {
-                    // Translation: differentiate the block's own position, since a
-                    // block has no velocity of its own until it is a rigidbody.
-                    velocityVector = (gameObject.transform.position - prevPos) / Time.deltaTime;
-                    prevPos = gameObject.transform.position;
+                    // A block has no velocity of its own until it is a rigidbody,
+                    // hence differentiating the transform rather than asking.
                     velocityPitch = velocityVector.magnitude / 100f;
                 }
-                else
+                if (Rotation.IsActive)
                 {
-                    // Rotation.
                     Rigidbody body = gameObject.GetComponent<Rigidbody>();
-                    velocityPitch = body.angularVelocity.magnitude / 50f;
+                    if (body != null)
+                    {
+                        float spin = body.angularVelocity.magnitude / 50f;
+                        // With both on, the livelier motion wins. With only one on
+                        // this is exactly what the old Translation/Rotation menu did.
+                        if (spin > velocityPitch)
+                        {
+                            velocityPitch = spin;
+                        }
+                    }
                 }
 
                 if (velocityPitch < MinPitch.Value)
@@ -458,11 +619,31 @@ namespace SoundBlocksMod
         /// Burn effect: while the block is on fire the pitch climbs and the volume
         /// falls, until it gives out entirely.
         /// </summary>
+        /// <summary>
+        /// True while the block is actually alight. Prefers the block's own
+        /// FireController, wherever on the block it sits, and keeps the base
+        /// property as a fallback so nothing regresses if the handler's own lookup
+        /// did find one.
+        /// </summary>
+        private bool BlockIsOnFire()
+        {
+            if (!searchedForFire)
+            {
+                searchedForFire = true;
+                fireController = GetComponentInChildren<FireController>();
+            }
+            if (fireController != null && fireController.onFire)
+            {
+                return true;
+            }
+            return IsBurning;
+        }
+
         public override void SimulateFixedUpdateAlways()
         {
             if (BurnEffect.IsActive)
             {
-                if (IsBurning || BurningNow)
+                if (BlockIsOnFire() || BurningNow)
                 {
                     if (SpeedUp >= 1000f)
                     {
