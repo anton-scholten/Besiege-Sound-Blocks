@@ -1,0 +1,74 @@
+<Mod>
+	<Name>Sound Blocks</Name>
+	<Author>wizz6rd</Author>
+	<Version>0.1.5</Version>
+	
+	<Description>
+	Adds a block to play preloaded sounds upon key press.
+	Multiple playback options are available, MP supported.
+	</Description>
+	
+	<Icon name="SoundBlocks_icon" />
+	<Debug>false</Debug>
+	<MultiplayerCompatible>true</MultiplayerCompatible>
+
+	<Assemblies>
+		<Assembly path="SoundBlocks.dll" />
+	</Assemblies>
+
+	<Blocks>
+		<Block path="SoundBlock.xml" />
+	</Blocks>
+	
+	<Resources>
+		<Mesh name="SoundBlock_mesh" path="SoundBlock\SoundBlock.obj" />
+		<Texture name="SoundBlock_texture" path="SoundBlock\SoundBlock.png" />
+		
+		<Texture name="SoundBlocks_icon" path="SoundBlocks.png" />
+		
+		<!-- Normal Sounds -->
+		<AudioClip name="Bike Horn" path="Sounds\BikeHorn.ogg" />
+		<AudioClip name="WzzWuub" path="Sounds\7Wzzzz.ogg" />
+		<AudioClip name="45mm Ear Rape" path="Sounds\45mm.ogg" />
+		<AudioClip name="Airplane1" path="Sounds\Airplane1.ogg" />
+		<AudioClip name="Airplane2" path="Sounds\Airplane2.ogg" />
+		<AudioClip name="Air Raid" path="Sounds\AirRaid.ogg" />
+		<AudioClip name="Beep1" path="Sounds\Beep1.ogg" />
+		<AudioClip name="Beep2" path="Sounds\Beep2.ogg" />
+		<AudioClip name="Beep3" path="Sounds\Beep3.ogg" />
+		<AudioClip name="Gas Gas Gas" path="Sounds\GasGasGas.ogg" />
+		<AudioClip name="Ruining the 90s" path="Sounds\RunninginThe90s.ogg" />
+		<AudioClip name="Big Smokes Order" path="Sounds\BigSmokesOrder.ogg" />
+		<AudioClip name="Car running" path="Sounds\Car_running.ogg" />
+		<AudioClip name="Car startup" path="Sounds\Car_startup.ogg" />
+		<AudioClip name="its time to stop" path="Sounds\itstimetostop.ogg" />
+		<AudioClip name="Laugh" path="Sounds\Laugh.ogg" />
+		<AudioClip name="nachi" path="Sounds\nachi.ogg" />
+		<AudioClip name="Nico Nico Nii" path="Sounds\NicoNicoNiiiiiiiii.ogg" />
+		<AudioClip name="Police Siren" path="Sounds\PoliceSiren.ogg" />
+		<AudioClip name="Weeb1" path="Sounds\Weeb1.ogg" />
+		<AudioClip name="Weeb2" path="Sounds\Weeb2.ogg" />
+		<!-- Version 0.1.1 -->
+		<AudioClip name="A lot of damage" path="Sounds\A lot of damage.ogg" />
+		<AudioClip name="Noot Noot" path="Sounds\Noot Noot.ogg" />
+		<AudioClip name="Wilhelm scream" path="Sounds\Wilhelm scream.ogg" />
+		<AudioClip name="Ooof" path="Sounds\Ooof.ogg" />
+		<AudioClip name="Tank Engine" path="Sounds\Tank Engine.ogg" />
+		<AudioClip name="Tracks1" path="Sounds\Tracks1.ogg" />
+		<AudioClip name="Tracks2" path="Sounds\Tracks2.ogg" />
+		
+		
+		<!-- Special Sounds used for Special Modes -->
+		<AudioClip name="Car1ClipA" path="Sounds\SpecialMode\Car1ClipA.ogg" />
+		<AudioClip name="Car1ClipB" path="Sounds\SpecialMode\Car1ClipB.ogg" />
+		<AudioClip name="Car1ClipC" path="Sounds\SpecialMode\Car1ClipC.ogg" />
+		<!-- Plane mode -->
+		<AudioClip name="Plane1ClipA" path="Sounds\SpecialMode\Plane1ClipA.ogg" />
+		<AudioClip name="Plane1ClipB" path="Sounds\SpecialMode\Plane1ClipB.ogg" />
+		<AudioClip name="Plane1ClipC" path="Sounds\SpecialMode\Plane1ClipC.ogg" />
+		
+	</Resources>
+	
+<ID>3880aac0-4ce5-495f-b0d3-830c2df55148</ID>
+
+</Mod>

@@ -1,0 +1,119 @@
+<Block>
+	<Debug>false</Debug>
+	<ID>1</ID>
+	<Name>Sound Block</Name>
+	<Mass>0.5</Mass>
+	<SearchKeywords>
+		<Keyword>sound block</Keyword>
+	</SearchKeywords>
+	<CanFlip>false</CanFlip>
+	<Fallback>Ballast</Fallback>
+
+	<Modules>
+		<SoundBlocksMod modid="3880aac0-4ce5-495f-b0d3-830c2df55148">
+			<Sounds>
+				<AudioClip name="Bike Horn" />
+				<AudioClip name="Wilhelm scream" />
+				<AudioClip name="Noot Noot" />
+				<AudioClip name="Ooof" />
+				<AudioClip name="A lot of damage" />
+				<AudioClip name="Laugh" />
+				<AudioClip name="WzzWuub" />
+				<AudioClip name="45mm Ear Rape" />
+				
+				<AudioClip name="Police Siren" />
+				<AudioClip name="Car running" />
+				<AudioClip name="Car startup" />
+				<AudioClip name="Tank Engine" />
+				<AudioClip name="Tracks1" />
+				<AudioClip name="Tracks2" />
+				
+				<AudioClip name="Airplane1" />
+				<AudioClip name="Airplane2" />
+				<AudioClip name="Air Raid" />
+				
+				<AudioClip name="Beep1" />
+				<AudioClip name="Beep2" />
+				<AudioClip name="Beep3" />
+				
+				<AudioClip name="Gas Gas Gas" />
+				<AudioClip name="Ruining the 90s" />
+				<AudioClip name="nachi" />
+				
+				<AudioClip name="Big Smokes Order" />
+				<AudioClip name="its time to stop" />
+				
+				<AudioClip name="Nico Nico Nii" />
+				<AudioClip name="Weeb1" />
+				<AudioClip name="Weeb2" />
+			</Sounds>
+			
+			<CustomMode>
+				<Mode name="Car" Sound_1="Car1ClipA" Sound_2="Car1ClipB" Sound_3="Car1ClipC" />
+				<Mode name="Plane" Sound_1="Plane1ClipA" Sound_2="Plane1ClipB" Sound_3="Plane1ClipC" />
+			</CustomMode>
+		</SoundBlocksMod>
+	</Modules>
+	
+	<Mesh name="SoundBlock_mesh" >
+		<Position x="0.45" y="-0.45" z="0.0" />
+		<Rotation x="-90.0" y="-90.0" z="-90.0" />
+		<Scale x="1" y="1" z="1" />
+	</Mesh>
+
+	<Texture name="SoundBlock_texture" />
+
+	<Icon>
+		<Position x="-0.15" y="-0.35" z="-1.5" /> <!--right, up, front-->
+		<Rotation x="-30.0" y="-30.0" z="0.0" /> <!--left, down, front-->
+		<Scale x="0.5" y="0.5" z="0.5" />
+	</Icon>
+	
+	<FireInteraction burnDuration="5" igniteOnStart="false">
+		<SphereTrigger>
+		<Position x="0" y="0" z="0.3" />
+		<Radius>1</Radius>
+		</SphereTrigger>
+	</FireInteraction>
+
+	<Colliders>
+		<BoxCollider>
+			<Position x="0.0" y="0.0" z="0.5" />
+			<Rotation x="0.0" y="0.0" z="0.0" />
+			<Scale x="0.8" y="0.8" z="0.8" />
+		</BoxCollider>
+	</Colliders>
+
+	<BasePoint hasAddingPoint="false">
+		<Stickiness enabled="true" radius="1" />
+		<Motion x="false" y="false" z="false" /> 
+	</BasePoint>
+	
+	<AddingPoints>
+		<AddingPoint> <!--Top-->
+			<Position x="0.0" y="0.0" z="1.0" />
+			<Rotation x="0.0" y="0.0" z="0.0" />
+			<Stickiness enabled="false" radius="0"/>
+		</AddingPoint>
+		<AddingPoint> <!--Back-->
+			<Position x="0.0" y="-0.5" z="0.5" />
+			<Rotation x="90.0" y="0.0" z="0.0" />
+			<Stickiness enabled="false" radius="0"/>
+		</AddingPoint>
+		<AddingPoint> <!--Front-->
+			<Position x="0.0" y="0.5" z="0.5" />
+			<Rotation x="-90.0" y="0.0" z="0.0" />
+			<Stickiness enabled="false" radius="0"/>
+		</AddingPoint>
+		<AddingPoint> <!--Left-->
+			<Position x="0.5" y="0.0" z="0.5" />
+			<Rotation x="0.0" y="90.0" z="0.0" />
+			<Stickiness enabled="false" radius="0"/>
+		</AddingPoint>
+		<AddingPoint> <!--Right-->
+			<Position x="-0.5" y="0.0" z="0.5" />
+			<Rotation x="0.0" y="-90.0" z="0.0" />
+			<Stickiness enabled="false" radius="0"/>
+		</AddingPoint>
+	</AddingPoints>
+</Block>
