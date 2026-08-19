@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0
+## 0.3.1
 
 Everything below is on top of 0.1.5, the last released version. Machines built
 with that version load and play as they did.
@@ -16,6 +16,8 @@ with that version load and play as they did.
 - A block that had burned once stayed silent for every later simulation run
   until the machine was reloaded. Per-run state is now reset at simulate.
 - **TimeScale** off now really leaves the pitch alone.
+- A negative **Pitch** only played the clip backwards with **Loop** on. Playback
+  starts at the end of the clip now, so reverse works as a one-shot too.
 - Special Mode on a block whose XML declares no modes no longer divides by zero.
 
 **Changed**

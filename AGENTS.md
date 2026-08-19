@@ -225,12 +225,20 @@ screenful of height and then leaves alone. Shrinking it to the sound block's
 content clipped every *other* block's rows away too, because one mapper instance
 serves them all: the symptom was no options pane at all, on any block.
 
-**Hide the scrollbar with the game's own `DisableScrollbar`.** `UIScrollbar` is
-public, and so are `active`, `DisableScrollbar`, `UpdateBounds` and
-`contentParent`. `DisableScrollbar` clears `active`, hides the scroller,
-everything in `objectsToToggle` and the collider; `Restore` hands control back
-with `UpdateBounds`. Reaching past it to disable renderers under the scrollbar is
-what blanked the mapper — the pooled rows hang under the same object.
+**Nothing scrolls, because the game measures the compacted content and decides
+so itself.** `UIScrollbar.UpdateBounds` sets `contentSize` from the union of the
+rows' renderer bounds, and where that comes out shorter than `contentMask` it
+calls `DisableScrollbar`. `Update` early-returns on the same test, so the wheel
+does nothing. Besiege only ever runs that measurement during a rebuild, from the
+stock one-column layout, so `Remeasure` re-runs it after each restack.
+`Attach` also calls `ResetContentPos`: content already scrolled off the top would
+stay off it, since the restack starts from wherever the first row now sits.
+
+**Never disable the `UIScrollbar` component.** Its `Update` is also what sets the
+static `stopCamZoom` while the cursor is inside the mask — with the component off
+the wheel falls through to the camera and zooms the level. Reaching past it to
+disable renderers is worse still: the pooled rows hang under the same object, and
+that blanked the mapper for every block.
 
 **Besiege will not move the title-bar buttons for us, so `StockScrollbar` does.**
 `UpdateBackground` places them as `closeStartPos + right * 0.2 * localScale.x *

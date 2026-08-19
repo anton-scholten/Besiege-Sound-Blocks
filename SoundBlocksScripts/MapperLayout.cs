@@ -76,6 +76,7 @@ namespace SoundBlocksMod
 
             current = block;
             block.EnsureVelocityMigrated();
+            Attach(mapper);
 
             // Rebuild here rather than letting LateUpdate do it: showing or hiding
             // a slider marks the mapper dirty, and a rebuild after this has run
@@ -87,6 +88,42 @@ namespace SoundBlocksMod
             }
 
             Apply(mapper, block.LayoutRows());
+        }
+
+        /// <summary>
+        /// Takes hold of the one shared mapper: finds the pieces this moves, and
+        /// stops it scrolling.
+        ///
+        /// The pane always has room for the whole block once the rows are paired
+        /// up, so scrolling has nothing left to do -- but Besiege decides that for
+        /// itself, from the stock layout, before any of this has run. So the
+        /// component is switched off outright, which stops the wheel and the drag
+        /// as well as the bar, and the content is put back to its origin: anything
+        /// already scrolled off the top would otherwise stay off it, since the
+        /// restack takes its start from wherever the first row currently sits.
+        /// </summary>
+        private static void Attach(BlockMapper mapper)
+        {
+            if (panelOwner == mapper)
+            {
+                return;
+            }
+            panelOwner = mapper;
+
+            // The panel art, and nothing else. `Container/Mask` is the scrollbar's
+            // contentMask -- a clipping region the game sizes to roughly a
+            // screenful. Shrinking that to the content clipped away every *other*
+            // block's rows, since one mapper serves them all.
+            background = NewPiece(mapper.transform.Find("Background"));
+            closeButton = ButtonTransform(mapper.CloseButton);
+            resetButton = ButtonTransform(mapper.ResetButton);
+            buttonsShifted = false;
+
+            scrollbar = mapper.GetComponentInChildren<UIScrollbar>(true);
+            if (scrollbar != null)
+            {
+                scrollbar.ResetContentPos();
+            }
         }
 
         private class Saved
@@ -202,6 +239,7 @@ namespace SoundBlocksMod
             }
 
             FitPanel(mapper, cursor);
+            Remeasure();
         }
 
         /// <summary>
@@ -219,20 +257,6 @@ namespace SoundBlocksMod
         /// </summary>
         private static void FitPanel(BlockMapper mapper, float contentBottom)
         {
-            if (panelOwner != mapper)
-            {
-                panelOwner = mapper;
-                // The panel art, and nothing else. `Container/Mask` is the
-                // scrollbar's contentMask -- a clipping region the game sizes to
-                // roughly a screenful. Shrinking that to the content clipped away
-                // every *other* block's rows, since one mapper serves them all.
-                background = NewPiece(mapper.transform.Find("Background"));
-                scrollbar = mapper.GetComponentInChildren<UIScrollbar>(true);
-                closeButton = ButtonTransform(mapper.CloseButton);
-                resetButton = ButtonTransform(mapper.ResetButton);
-                buttonsShifted = false;
-            }
-
             StockScrollbar(mapper);
 
             Piece p = background;
@@ -279,19 +303,37 @@ namespace SoundBlocksMod
         }
 
         /// <summary>
-        /// Hands the scrollbar to Besiege's own "nothing to scroll" state, then
-        /// puts the title-bar buttons where a mapper without one keeps them.
+        /// Re-measures the content now that it has been compacted, which is the
+        /// whole of "no scrolling".
         ///
-        /// `DisableScrollbar` is the game's own public call: it clears `active`,
-        /// hides the scroller, `objectsToToggle` and the collider, and `Restore`
-        /// hands control back with `UpdateBounds`. Reaching in to disable
-        /// renderers instead is what blanked the mapper -- the pooled rows hang
-        /// under the same object.
+        /// `UIScrollbar.UpdateBounds` sets `contentSize` from the union of the
+        /// rows' renderer bounds and calls `DisableScrollbar` itself when that
+        /// comes out shorter than the mask. Its `Update` then early-returns on the
+        /// same test, so the wheel does nothing -- exactly as on a block whose
+        /// options fit. Besiege's own measurement is taken during a rebuild, from
+        /// the stock one-column layout, so it never sees the compacted height.
         ///
-        /// The buttons need the extra step because Besiege moves them only from
-        /// `UpdateBackground`, only on a *change* of `active`, and re-measures
-        /// `active` from the stock layout on every rebuild -- so it always
-        /// concludes the sound block scrolls. The shift is its own formula.
+        /// The component itself must stay enabled. `Update` is also what sets the
+        /// static `stopCamZoom` while the cursor is over the pane; with it off,
+        /// the wheel falls through to the camera and zooms the level.
+        /// </summary>
+        private static void Remeasure()
+        {
+            if (scrollbar != null && scrollbar.contentParent != null)
+            {
+                scrollbar.UpdateBounds();
+            }
+        }
+
+        /// <summary>
+        /// Puts the two right-hand title-bar buttons where a mapper without a
+        /// scrollbar keeps them.
+        ///
+        /// Besiege moves them only from `UpdateBackground`, only on a *change* of
+        /// `scrollbar.active`, and it re-measures `active` from the stock row
+        /// layout on every rebuild -- before any of this has run. So it concludes
+        /// the sound block scrolls, shifts the buttons along, and never sees the
+        /// scrollbar go away again. The offset undone here is its own formula.
         /// </summary>
         private static void StockScrollbar(BlockMapper mapper)
         {
@@ -300,26 +342,22 @@ namespace SoundBlocksMod
                 return;
             }
 
-            if (scrollbar.active)
+            if (scrollbar.active && !buttonsShifted)
             {
-                if (!buttonsShifted)
+                // Read the shifted positions while they are still the game's own;
+                // from here the targets are absolute.
+                buttonsShifted = true;
+                float shift = 0.2f * mapper.transform.localScale.x * 0.75f;
+                if (closeButton != null)
                 {
-                    // Read the shifted positions before the game has any reason
-                    // to change them again; from here the targets are absolute.
-                    buttonsShifted = true;
-                    float shift = 0.2f * mapper.transform.localScale.x * 0.75f;
-                    if (closeButton != null)
-                    {
-                        closeStock = closeButton.localPosition;
-                        closeApplied = closeStock - Vector3.right * shift;
-                    }
-                    if (resetButton != null)
-                    {
-                        resetStock = resetButton.localPosition;
-                        resetApplied = resetStock - Vector3.right * shift;
-                    }
+                    closeStock = closeButton.localPosition;
+                    closeApplied = closeStock - Vector3.right * shift;
                 }
-                scrollbar.DisableScrollbar();
+                if (resetButton != null)
+                {
+                    resetStock = resetButton.localPosition;
+                    resetApplied = resetStock - Vector3.right * shift;
+                }
             }
 
             if (buttonsShifted)
@@ -418,10 +456,7 @@ namespace SoundBlocksMod
             }
 
             // Let the game work out for itself whether the next block scrolls.
-            if (scrollbar != null && scrollbar.contentParent != null)
-            {
-                scrollbar.UpdateBounds();
-            }
+            Remeasure();
             scrollbar = null;
             closeButton = null;
             resetButton = null;

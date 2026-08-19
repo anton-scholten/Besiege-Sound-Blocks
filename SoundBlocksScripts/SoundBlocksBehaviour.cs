@@ -463,7 +463,7 @@ namespace SoundBlocksMod
                 }
                 else
                 {
-                    source_audio.Play();
+                    PlayClip();
                     if (PushToggle.IsActive)
                     {
                         PlayingToggleAudio = true;
@@ -551,6 +551,24 @@ namespace SoundBlocksMod
         }
 
         /// <summary>
+        /// Starts the clip, from its end when the pitch is negative.
+        ///
+        /// Play() always begins at sample 0, and a negative pitch runs from there
+        /// straight past the start of the clip, so playback ends the instant it
+        /// begins. Looping hid this -- Unity wraps a looping source round to the
+        /// end, which is why reverse pitch appeared to work only with Loop on.
+        /// </summary>
+        private void PlayClip()
+        {
+            source_audio.Play();
+            AudioClip clip = source_audio.clip;
+            if (source_audio.pitch < 0f && clip != null && clip.samples > 0)
+            {
+                source_audio.timeSamples = clip.samples - 1;
+            }
+        }
+
+        /// <summary>
         /// Special Mode: clip 1 on press, clip 2 looping once clip 1 has finished,
         /// clip 3 on release. An engine start / idle / shutdown, in other words.
         /// </summary>
@@ -561,7 +579,7 @@ namespace SoundBlocksMod
                 source_audio.Stop();
                 source_audio.clip = SpecialClip1;
                 source_audio.loop = false;
-                source_audio.Play();
+                PlayClip();
                 SpecialFlag = true;
             }
 
@@ -571,7 +589,7 @@ namespace SoundBlocksMod
                 {
                     source_audio.clip = SpecialClip2;
                     source_audio.loop = true;
-                    source_audio.Play();
+                    PlayClip();
                     SpecialFlag = false;
                 }
             }
@@ -580,7 +598,7 @@ namespace SoundBlocksMod
             {
                 source_audio.clip = SpecialClip3;
                 source_audio.loop = false;
-                source_audio.Play();
+                PlayClip();
             }
         }
 
