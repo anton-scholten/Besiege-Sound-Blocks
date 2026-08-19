@@ -18,8 +18,6 @@ namespace SoundBlocksMod
     [XmlRoot("SoundBlocksMod")]
     public class SoundBlocks : BlockModule
     {
-        public string Text { get; set; }
-
         /// <summary>
         /// The clips offered in the block's sound menu. Declared as object[] because
         /// the loader hands back ResourceReference instances that the behaviour
@@ -37,15 +35,6 @@ namespace SoundBlocksMod
         [RequireToValidate]
         [CanBeEmpty]
         public Mode[] Modes;
-
-        protected override bool Validate(string elemName)
-        {
-            if (!base.Validate(elemName))
-            {
-                return false;
-            }
-            return true;
-        }
     }
 
     /// <summary>

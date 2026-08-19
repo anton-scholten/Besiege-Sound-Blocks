@@ -75,8 +75,9 @@ stay stable for the life of the mod.
 Set `BESIEGE_DIR` if your install is somewhere the scripts do not look. Besiege
 reads mods once at startup, so restart the game to pick up a new build.
 
-The source in `SoundBlocksScripts/` was recovered from the shipped assembly after
-the original was lost; [docs/RECOVERY.md](docs/RECOVERY.md) covers how, and
+[CHANGELOG.md](CHANGELOG.md) is what changed since the last release. The source
+in `SoundBlocksScripts/` was recovered from the shipped assembly after the
+original was lost; [docs/RECOVERY.md](docs/RECOVERY.md) covers how, and
 [AGENTS.md](AGENTS.md) is the working notes for changing it.
 
 ## Credits

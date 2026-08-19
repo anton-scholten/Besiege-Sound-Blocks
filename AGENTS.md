@@ -215,11 +215,30 @@ alone stay local.
 
 `UpdateBackground` sizes the panel from its `WidgetController`'s `EndPosition`,
 which always describes the *uncompacted* layout. `set_EndPosition` is private and
-the controller is a private field, so `FitPanel` resizes the panel's own objects
-instead — `Background` and `Container/Mask`, found by name from a dump of the
-hierarchy — and hides `Container/Scrollbar`, since with the window fitted there
-is nothing left to scroll. `lossyScale` carries the parent chain, so no scale
-factor is hardcoded.
+the controller is a private field, so `FitPanel` resizes the panel art itself —
+`Background`, found by name from a dump of the hierarchy. `lossyScale` carries the
+parent chain, so no scale factor is hardcoded.
+
+**Resize `Background` and nothing else.** `Container/Mask` is the scrollbar's
+`contentMask` — a clipping region, which `SetScrollHeight` gives roughly a
+screenful of height and then leaves alone. Shrinking it to the sound block's
+content clipped every *other* block's rows away too, because one mapper instance
+serves them all: the symptom was no options pane at all, on any block.
+
+**Hide the scrollbar with the game's own `DisableScrollbar`.** `UIScrollbar` is
+public, and so are `active`, `DisableScrollbar`, `UpdateBounds` and
+`contentParent`. `DisableScrollbar` clears `active`, hides the scroller,
+everything in `objectsToToggle` and the collider; `Restore` hands control back
+with `UpdateBounds`. Reaching past it to disable renderers under the scrollbar is
+what blanked the mapper — the pooled rows hang under the same object.
+
+**Besiege will not move the title-bar buttons for us, so `StockScrollbar` does.**
+`UpdateBackground` places them as `closeStartPos + right * 0.2 * localScale.x *
+0.75` when `scrollbar.active`, and only writes them when `active` *changes*. It
+re-measures `active` inside every rebuild, from the stock row layout, before any
+of this has compacted anything — so it always concludes the sound block scrolls,
+and clearing `active` afterwards is never seen as a change. Hence the offset is
+undone by hand, from the same formula, against positions captured once.
 
 **The target is the content's own bottom edge, and the fit grows as well as
 shrinks.** Both halves were learned the hard way:
@@ -261,11 +280,12 @@ compacted.
 
 ### When it goes wrong, measure
 
-`MapperLayout.Compact = false` leaves the mapper stock and dumps every row's
-identity, position, `Top`/`Bottom`/`Height` and background scale instead. That
-dump is how the model above was established, after two attempts at guessing the
-geometry both produced overlapping rows. Use it before adjusting anything by eye:
-the result can then be checked on paper against the numbers.
+The model above was established by logging every row's identity, position,
+`Top`/`Bottom`/`Height` and background scale from a running mapper, after two
+attempts at guessing the geometry both produced overlapping rows. Do that again
+before adjusting anything by eye — a `Debug.Log` loop over
+`mapper.GetComponentsInChildren<ContainerDetails>(true)` is the whole of it — so
+the arithmetic can be checked on paper against real numbers.
 
 ## Known, and not this mod's to fix
 
