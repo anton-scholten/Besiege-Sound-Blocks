@@ -42,12 +42,14 @@ Nothing scrolls.
 | Translation | Pitch rises with how fast the block moves |
 | Rotation | Pitch rises with how fast the block spins |
 | Min / Max velocity pitch | Floor and ceiling for that pitch. Shown when either mode is on |
+| Min / Max velocity volume | The same for loudness — quiet at rest, louder with speed. Sliders, 0 to 1, both at 1 by default, which is no effect |
 | Burn effect | On fire, the block winds up and gives out |
 | Volume | 0 to 1 |
 | Pitch | Unclamped. **Negative plays the clip backwards** |
 
 With **Translation** and **Rotation** both on, the livelier of the two motions
-drives the sound.
+drives the sound. One speed reading feeds both pairs, so pitch and loudness rise
+together unless you set them to disagree.
 
 ## Special Mode
 

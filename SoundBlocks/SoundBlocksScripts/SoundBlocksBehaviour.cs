@@ -65,6 +65,13 @@ namespace SoundBlocksMod
         private Vector3 velocityVector;
         private MValue MinPitch;
         private MValue MaxPitch;
+        private MSlider MinVolume;
+        private MSlider MaxVolume;
+
+        // How far the burn effect has taken the volume down, kept apart from the
+        // AudioSource so the velocity multiplier can be reapplied every frame
+        // without wiping it.
+        private float burnDrop;
         private MSlider MaxDist;
 
         // The velocity effect is two toggles now. Either one on enables it, and
@@ -109,6 +116,12 @@ namespace SoundBlocksMod
 
             MinPitch = AddValue("Min velocity pitch", "MinPitchKey", 0.5f);
             MaxPitch = AddValue("Max velocity pitch", "MaxPitchKey", 1.5f);
+            // Both default to 1, which is no effect at all: unlike the pitch pair
+            // these are new, so a machine saved before they existed gets them at
+            // their defaults, and anything but 1 would change how it already
+            // sounds. Set them to hear the block rise and fall with its speed.
+            MinVolume = AddSlider("Min velocity volume", "MinVolumeKey", 1f, 0f, 1f);
+            MaxVolume = AddSlider("Max velocity volume", "MaxVolumeKey", 1f, 0f, 1f);
             MaxDist = AddSlider("Max Dist", "MaxDistKey", 250f, 0f, 500f);
             VeloTraRot = AddMenu("VeloTraRotKey", 0, new List<string> { "Translation", "Rotation" }, false);
             VeloTraRot.DisplayInMapper = false;
@@ -146,6 +159,8 @@ namespace SoundBlocksMod
             rows.Add(new MapperType[] { MaxDist });
             rows.Add(new MapperType[] { MinPitch });
             rows.Add(new MapperType[] { MaxPitch });
+            rows.Add(new MapperType[] { MinVolume });
+            rows.Add(new MapperType[] { MaxVolume });
             return rows;
         }
 
@@ -241,6 +256,8 @@ namespace SoundBlocksMod
             bool active = VelocityActive;
             MinPitch.DisplayInMapper = active;
             MaxPitch.DisplayInMapper = active;
+            MinVolume.DisplayInMapper = active;
+            MaxVolume.DisplayInMapper = active;
         }
 
         /// <summary>
@@ -291,6 +308,7 @@ namespace SoundBlocksMod
             startFrames = 0;
             canPlay = false;
             vol = 0f;
+            burnDrop = 0f;
             SpeedUp = 0f;
             PitchFactor = 1f;
             BurningNow = false;
@@ -372,7 +390,6 @@ namespace SoundBlocksMod
                         return;
                     }
 
-                    source_audio.volume = vol;
                     source_audio.loop = Loop.IsActive;
                     source_audio.minDistance = 0f;
                     source_audio.maxDistance = MaxDist.Value;
@@ -414,12 +431,16 @@ namespace SoundBlocksMod
                 prevPos = gameObject.transform.position;
             }
 
+            // One speed reading drives both the pitch and the volume; each gets
+            // its own floor and ceiling. Unmoving reads as zero, so it clamps to
+            // whichever minimum, and anything fast enough clamps to the maximum.
+            float velocityVolume = 1f;
             if (VelocityActive)
             {
-                float velocityPitch = 0f;
+                float speed = 0f;
                 if (Translation.IsActive)
                 {
-                    velocityPitch = velocityVector.magnitude / 100f;
+                    speed = velocityVector.magnitude / 100f;
                 }
                 if (Rotation.IsActive)
                 {
@@ -429,23 +450,21 @@ namespace SoundBlocksMod
                         // With both on the livelier motion wins; with one on this
                         // is what the old Translation/Rotation menu did.
                         float spin = body.angularVelocity.magnitude / 50f;
-                        if (spin > velocityPitch)
+                        if (spin > speed)
                         {
-                            velocityPitch = spin;
+                            speed = spin;
                         }
                     }
                 }
 
-                if (velocityPitch < MinPitch.Value)
-                {
-                    velocityPitch = MinPitch.Value;
-                }
-                else if (velocityPitch > MaxPitch.Value)
-                {
-                    velocityPitch = MaxPitch.Value;
-                }
-                source_audio.pitch = source_audio.pitch * velocityPitch;
+                source_audio.pitch = source_audio.pitch * Between(speed, MinPitch.Value, MaxPitch.Value);
+                velocityVolume = Between(speed, MinVolume.Value, MaxVolume.Value);
             }
+
+            // Written every frame rather than once at startup, because the
+            // velocity multiplier changes with the block. `burnDrop` carries the
+            // burn effect's own reduction, which is in absolute terms.
+            source_audio.volume = Mathf.Max(0f, vol - burnDrop) * velocityVolume;
 
             if (SpecialToggle.IsActive)
             {
@@ -550,6 +569,20 @@ namespace SoundBlocksMod
             }
         }
 
+        /// <summary>Clamps <paramref name="value"/> into [min, max].</summary>
+        private static float Between(float value, float min, float max)
+        {
+            if (value < min)
+            {
+                return min;
+            }
+            if (value > max)
+            {
+                return max;
+            }
+            return value;
+        }
+
         /// <summary>
         /// Starts the clip, from its end when the pitch is negative.
         ///
@@ -640,7 +673,7 @@ namespace SoundBlocksMod
                     else if (SpeedUp >= 400f)
                     {
                         PitchFactor += 0.002f;
-                        source_audio.volume = source_audio.volume - 0.004f;
+                        burnDrop += 0.004f;
                         SpeedUp += 1f;
                     }
                     else

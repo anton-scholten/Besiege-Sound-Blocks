@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Added**
+
+- **Min velocity volume** and **Max velocity volume**, alongside the pitch pair.
+  One speed reading drives both, so a block can grow louder as it moves or spins,
+  not just higher. Shown with **Translation** or **Rotation**, like the pitch
+  values. Sliders from 0 to 1, both at 1 by default, which is no effect, so
+  nothing already built changes how it sounds.
+
 **Changed**
 
 - The mod now lives in a `SoundBlocks/` subfolder rather than being the whole
