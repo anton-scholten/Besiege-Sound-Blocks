@@ -248,6 +248,20 @@ screenful of height and then leaves alone. Shrinking it to the sound block's
 content clipped every *other* block's rows away too, because one mapper instance
 serves them all: the symptom was no options pane at all, on any block.
 
+**Never run the panel past the clip line, and never resize the clip line.** The
+mask is `scrollbar.contentMask`, sized by `SetScrollHeight` to what fits on
+screen. The panel art is a *sibling* of it, not a child, so it is not clipped —
+fitting it to the content ran it below the last row Besiege will actually draw,
+which is exactly the band of empty background. `FitPanel` therefore takes the
+higher of the content bottom and the mask bottom.
+
+Growing the mask instead was tried and is wrong: measured, the stock mask spans
+`-16.561` to `-23.761` while the velocity rows end at `-24.976`, so opening it up
+put the last row below the bottom of the screen with no way to reach it.
+Shrinking it is worse still — that is what once clipped away every other block's
+rows. Leave it alone; where the content is longer, the pane fills to the mask and
+the game's own scrollbar reaches the rest.
+
 **Nothing scrolls, because the game measures the compacted content and decides
 so itself.** `UIScrollbar.UpdateBounds` sets `contentSize` from the union of the
 rows' renderer bounds, and where that comes out shorter than `contentMask` it
@@ -263,13 +277,15 @@ the wheel falls through to the camera and zooms the level. Reaching past it to
 disable renderers is worse still: the pooled rows hang under the same object, and
 that blanked the mapper for every block.
 
-**Besiege will not move the title-bar buttons for us, so `StockScrollbar` does.**
-`UpdateBackground` places them as `closeStartPos + right * 0.2 * localScale.x *
-0.75` when `scrollbar.active`, and only writes them when `active` *changes*. It
-re-measures `active` inside every rebuild, from the stock row layout, before any
-of this has compacted anything — so it always concludes the sound block scrolls,
-and clearing `active` afterwards is never seen as a change. Hence the offset is
-undone by hand, from the same formula, against positions captured once.
+**Besiege will not move the title-bar buttons for us, so `PlaceButtons` does.**
+`UpdateBackground` places them at `closeStartPos + right * 0.2 * localScale.x *
+0.75` when `scrollbar.active`, and writes them only when `active` *changes*. It
+re-measures `active` inside every rebuild, from the stock row layout, so it never
+sees the compacted pane's answer in either direction. `LearnButtons` recovers the
+unshifted position from wherever the game has them at Attach — before any
+re-measure of ours, so the two still agree — and `PlaceButtons` applies the same
+formula afterwards, following whatever `Remeasure` settled on. That is why it
+runs *after* `Remeasure`, in `Apply` and again in `Restore`.
 
 **The target is the content's own bottom edge, and the fit grows as well as
 shrinks.** Both halves were learned the hard way:

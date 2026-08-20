@@ -46,9 +46,11 @@ namespace SoundBlocksMod
         private static Transform resetButton;
         private static Vector3 closeStock;
         private static Vector3 resetStock;
-        private static Vector3 closeApplied;
-        private static Vector3 resetApplied;
-        private static bool buttonsShifted;
+        private static float buttonShift;
+        private static bool buttonsKnown;
+        private static Transform contentMask;
+        private static float contentEnd;
+        private static bool dumped;
 
         /// <summary>
         /// Driven once a frame by MapperLayoutHost. Every frame, not once per
@@ -117,12 +119,16 @@ namespace SoundBlocksMod
             background = NewPiece(mapper.transform.Find("Background"));
             closeButton = ButtonTransform(mapper.CloseButton);
             resetButton = ButtonTransform(mapper.ResetButton);
-            buttonsShifted = false;
+            buttonsKnown = false;
+            dumped = false;
 
             scrollbar = mapper.GetComponentInChildren<UIScrollbar>(true);
+            contentMask = null;
             if (scrollbar != null)
             {
+                contentMask = scrollbar.contentMask;
                 scrollbar.ResetContentPos();
+                LearnButtons(mapper);
             }
         }
 
@@ -238,8 +244,16 @@ namespace SoundBlocksMod
                 cursor = bottom;
             }
 
+            contentEnd = cursor;
             FitPanel(mapper, cursor);
             Remeasure();
+            PlaceButtons();
+
+            if (!dumped)
+            {
+                dumped = true;
+                Dump(mapper, stack);
+            }
         }
 
         /// <summary>
@@ -257,7 +271,20 @@ namespace SoundBlocksMod
         /// </summary>
         private static void FitPanel(BlockMapper mapper, float contentBottom)
         {
-            StockScrollbar(mapper);
+            // Never past the clip line. The panel art is a sibling of the mask,
+            // not inside it, so it is not clipped: run it down to the content and
+            // it carries on below the last row Besiege will actually draw, which
+            // is where the band of empty background came from. Where the content
+            // is longer than the mask the pane fills to the mask and the game's
+            // own scrollbar reaches the rest.
+            if (contentMask != null)
+            {
+                float maskBottom = contentMask.position.y - contentMask.lossyScale.y * 0.5f;
+                if (maskBottom > contentBottom)
+                {
+                    contentBottom = maskBottom;
+                }
+            }
 
             Piece p = background;
             if (p == null || p.T == null)
@@ -326,50 +353,51 @@ namespace SoundBlocksMod
         }
 
         /// <summary>
-        /// Puts the two right-hand title-bar buttons where a mapper without a
-        /// scrollbar keeps them.
+        /// Works out where the two right-hand title-bar buttons sit with the
+        /// scrollbar off, from wherever the game has them now.
         ///
-        /// Besiege moves them only from `UpdateBackground`, only on a *change* of
-        /// `scrollbar.active`, and it re-measures `active` from the stock row
-        /// layout on every rebuild -- before any of this has run. So it concludes
-        /// the sound block scrolls, shifts the buttons along, and never sees the
-        /// scrollbar go away again. The offset undone here is its own formula.
+        /// `UpdateBackground` places them at `stock + right * 0.2 * scale.x * 0.75`
+        /// while the scrollbar is active, and writes them only on a *change* of
+        /// `active`. Called from Attach, before any re-measure of ours, so the
+        /// positions still match what the game last concluded.
         /// </summary>
-        private static void StockScrollbar(BlockMapper mapper)
+        private static void LearnButtons(BlockMapper mapper)
         {
-            if (scrollbar == null)
+            buttonsKnown = true;
+            buttonShift = 0.2f * mapper.transform.localScale.x * 0.75f;
+            Vector3 off = scrollbar.active ? Vector3.right * buttonShift : Vector3.zero;
+            if (closeButton != null)
+            {
+                closeStock = closeButton.localPosition - off;
+            }
+            if (resetButton != null)
+            {
+                resetStock = resetButton.localPosition - off;
+            }
+        }
+
+        /// <summary>
+        /// Puts the buttons where the current scrollbar state calls for.
+        ///
+        /// Run after the re-measure, because that is what settles whether this
+        /// block scrolls, and Besiege will not move them for us: it re-reads
+        /// `active` from the stock row layout on every rebuild, so it never sees
+        /// the compacted pane's answer either way.
+        /// </summary>
+        private static void PlaceButtons()
+        {
+            if (!buttonsKnown || scrollbar == null)
             {
                 return;
             }
-
-            if (scrollbar.active && !buttonsShifted)
+            Vector3 off = scrollbar.active ? Vector3.right * buttonShift : Vector3.zero;
+            if (closeButton != null)
             {
-                // Read the shifted positions while they are still the game's own;
-                // from here the targets are absolute.
-                buttonsShifted = true;
-                float shift = 0.2f * mapper.transform.localScale.x * 0.75f;
-                if (closeButton != null)
-                {
-                    closeStock = closeButton.localPosition;
-                    closeApplied = closeStock - Vector3.right * shift;
-                }
-                if (resetButton != null)
-                {
-                    resetStock = resetButton.localPosition;
-                    resetApplied = resetStock - Vector3.right * shift;
-                }
+                closeButton.localPosition = closeStock + off;
             }
-
-            if (buttonsShifted)
+            if (resetButton != null)
             {
-                if (closeButton != null)
-                {
-                    closeButton.localPosition = closeApplied;
-                }
-                if (resetButton != null)
-                {
-                    resetButton.localPosition = resetApplied;
-                }
+                resetButton.localPosition = resetStock + off;
             }
         }
 
@@ -442,21 +470,12 @@ namespace SoundBlocksMod
             }
             background = null;
 
-            if (buttonsShifted)
-            {
-                if (closeButton != null && closeButton.localPosition == closeApplied)
-                {
-                    closeButton.localPosition = closeStock;
-                }
-                if (resetButton != null && resetButton.localPosition == resetApplied)
-                {
-                    resetButton.localPosition = resetStock;
-                }
-                buttonsShifted = false;
-            }
-
-            // Let the game work out for itself whether the next block scrolls.
+            // Let the game work out for itself whether the next block scrolls,
+            // then leave the buttons where that answer puts them.
             Remeasure();
+            PlaceButtons();
+            buttonsKnown = false;
+            contentMask = null;
             scrollbar = null;
             closeButton = null;
             resetButton = null;
@@ -639,6 +658,47 @@ namespace SoundBlocksMod
         }
 
         /// <summary>Notes a plate this halved, so Restore can put its width back.</summary>
+        /// <summary>
+        /// One-shot geometry log per mapper open, greppable in Player.log as
+        /// `[SB layout]`. This is what turned the layout from guesswork into
+        /// arithmetic; leave it in until the pane is settled.
+        /// </summary>
+        private static void Dump(BlockMapper mapper, List<ContainerDetails> stack)
+        {
+            Debug.Log("[SB layout] ---- " + stack.Count + " rows, mapperScale="
+                + mapper.transform.localScale + " ----");
+            for (int i = 0; i < stack.Count; i++)
+            {
+                ContainerDetails c = stack[i];
+                string who = "(none)";
+                if (c.selector != null && c.selector.MapperType != null)
+                {
+                    who = c.selector.MapperType.Key;
+                }
+                Debug.Log("[SB layout] " + i + " " + who
+                    + " Top=" + c.Top + " Bottom=" + c.Bottom + " H=" + c.Height);
+            }
+            Debug.Log("[SB layout] contentEnd=" + contentEnd);
+            if (background != null && background.T != null)
+            {
+                Debug.Log("[SB layout] bg localY=" + background.T.localScale.y
+                    + " posY=" + background.T.position.y
+                    + " lossyY=" + background.T.lossyScale.y
+                    + " fullLocalY=" + background.FullLocalY);
+            }
+            if (contentMask != null)
+            {
+                Debug.Log("[SB layout] mask localY=" + contentMask.localScale.y
+                    + " posY=" + contentMask.position.y
+                    + " lossyY=" + contentMask.lossyScale.y
+                    + " bottom=" + (contentMask.position.y - contentMask.lossyScale.y * 0.5f));
+            }
+            if (scrollbar != null)
+            {
+                Debug.Log("[SB layout] scrollbar.active=" + scrollbar.active);
+            }
+        }
+
         private static void RecordHalved(Transform background, float full, float halved)
         {
             for (int i = 0; i < saved.Count; i++)
