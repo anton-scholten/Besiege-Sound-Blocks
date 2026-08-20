@@ -13,15 +13,15 @@
 # Besiege reads mods once at startup, so restart the game afterwards.
 # Set BESIEGE_DIR if the install is not auto-detected.
 #
-# Unlike the sibling mods, the folder Besiege loads *is* the repository root --
-# that is what gets uploaded to the Workshop -- so the link points at the whole
-# checkout. Besiege only reads what Mod.xml names, so the sources and working
-# files alongside it are ignored.
+# The folder Besiege loads is SoundBlocks/, not the repository root: that
+# subfolder is the whole of what gets uploaded to the Workshop, and everything
+# beside it -- sources, tools, docs, working files -- is not part of the mod.
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC="$REPO_DIR"
+MOD_NAME="SoundBlocks"
+SRC="$REPO_DIR/$MOD_NAME"
 
 MODE="link"
 BUILD=1
@@ -60,7 +60,7 @@ if ! BESIEGE="$(find_besiege)"; then
 fi
 
 MODS="$BESIEGE/Besiege_Data/Mods"
-DEST="$MODS/SoundBlocks"
+DEST="$MODS/$MOD_NAME"
 
 if [[ "$MODE" == "uninstall" ]]; then
     if [[ -L "$DEST" ]]; then
@@ -79,8 +79,8 @@ if [[ $BUILD -eq 1 ]]; then
     "$REPO_DIR/tools/build.sh"
 fi
 
-if [[ ! -f "$REPO_DIR/SoundBlocks.dll" ]]; then
-    echo "SoundBlocks.dll is missing; run ./tools/build.sh first." >&2
+if [[ ! -f "$SRC/SoundBlocks.dll" ]]; then
+    echo "SoundBlocks/SoundBlocks.dll is missing; run ./tools/build.sh first." >&2
     exit 1
 fi
 
@@ -90,9 +90,8 @@ mkdir -p "$MODS"
 [[ -d "$DEST" ]] && rm -rf "$DEST"
 
 if [[ "$MODE" == "copy" ]]; then
-    mkdir -p "$DEST"
-    cp "$REPO_DIR/Mod.xml" "$REPO_DIR/SoundBlock.xml" "$REPO_DIR/SoundBlocks.dll" "$DEST/"
-    cp -r "$REPO_DIR/Resources" "$DEST/"
+    cp -r "$SRC" "$DEST"
+    rm -rf "$DEST/SoundBlocksScripts"
     echo "Copied mod to $DEST"
 else
     ln -s "$SRC" "$DEST"

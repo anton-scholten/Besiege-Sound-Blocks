@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+**Changed**
+
+- The mod now lives in a `SoundBlocks/` subfolder rather than being the whole
+  repository, matching the sibling mods. `.git` was inside the folder Besiege
+  copies when publishing, and its read-only objects then jammed the Workshop
+  uploader for every mod until the staging folder was deleted by hand. See
+  [AGENTS.md](AGENTS.md#layout).
+
 ## 0.3.1
 
 Everything below is on top of 0.1.5, the last released version. Machines built

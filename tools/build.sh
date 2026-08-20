@@ -20,9 +20,9 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC_DIR="$REPO_DIR/SoundBlocksScripts"
+SRC_DIR="$REPO_DIR/SoundBlocks/SoundBlocksScripts"
 BUILD_DIR="${TMPDIR:-/tmp}/besiege-soundblocks-build"
-OUT="$REPO_DIR/SoundBlocks.dll"
+OUT="$REPO_DIR/SoundBlocks/SoundBlocks.dll"
 
 CHECK_ONLY=0
 if [[ "${1:-}" == "--check" ]]; then

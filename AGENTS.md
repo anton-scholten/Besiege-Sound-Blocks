@@ -8,24 +8,47 @@ is, are in [docs/RECOVERY.md](docs/RECOVERY.md).
 
 ## Layout
 
-The folder Besiege loads is the repository root, because that is what gets
-uploaded to the Workshop. Everything else is beside it and is not part of the
+The folder Besiege loads is `SoundBlocks/`, because that subfolder is the whole
+of what gets uploaded to the Workshop. Everything beside it is not part of the
 mod.
 
 ```
-Mod.xml                     manifest: assembly, resources, block list
-SoundBlock.xml              the block: mesh, colliders, and the module's data
-SoundBlocks.dll             built by tools/build.sh (checked in, the game loads it)
-Resources/                  the mesh, the textures and every .ogg the block offers
-SoundBlocksScripts/*.cs     mod source
-tools/build.sh              compiles with Besiege's own compiler
-tools/verify-build.sh       the check to run after editing any .cs
-tools/install.sh            builds and installs into the game
-sounds/, Previous_promo/    working files; not loaded by anything
+SoundBlocks/Mod.xml                     manifest: assembly, resources, block list
+SoundBlocks/SoundBlock.xml              the block: mesh, colliders, and the module's data
+SoundBlocks/SoundBlocks.dll             built by tools/build.sh (checked in, the game loads it)
+SoundBlocks/Resources/                  the mesh, the textures and every .ogg the block offers
+SoundBlocks/SoundBlocksScripts/*.cs     mod source; not read by the game
+tools/build.sh                          compiles with Besiege's own compiler
+tools/verify-build.sh                   the check to run after editing any .cs
+tools/install.sh                        builds and installs into the game
+docs/, sounds/, Previous_stuff/         notes and working files; not loaded by anything
 ```
 
-`SoundBlocks.dll` is committed on purpose. `Mod.xml` names it as an `<Assembly>`,
-so a checkout has to carry a built one or the mod does not load.
+`SoundBlocks/SoundBlocks.dll` is committed on purpose. `Mod.xml` names it as an
+`<Assembly>`, so a checkout has to carry a built one or the mod does not load.
+
+**The mod folder is a subfolder for a reason: `.git` must not be inside it.**
+This used to be the repository root, and Besiege's Workshop upload copies the
+whole mod folder into `Besiege_Data/WorkshopUpload/` before publishing — so it
+copied `.git` too. Git stores loose objects mode `0444`, and Mono's `File.Delete`
+refuses read-only files, so `WorkshopManager.CreateUploadFolder()` could no
+longer wipe that staging folder. Since it wipes the whole folder before *every*
+upload, one poisoned copy blocked publishing for every mod, not just this one:
+
+```
+System.UnauthorizedAccessException: Access to the path
+".../WorkshopUpload/SoundBlocks/.git/objects/00/df3bbee..." is denied.
+  at WorkshopManager.CreateUploadFolder ()
+  at SteamWorkshopManager.CreateOrUpdateItem (...)
+```
+
+If that ever recurs, delete `Besiege_Data/WorkshopUpload/` — the game recreates
+it.
+
+`SoundBlocksScripts/` sits inside `SoundBlocks/` so the sources travel with the
+mod folder, the way the sibling mods do it. Besiege only reads what `Mod.xml`
+names, so the `.cs` files there are ignored by the game; `tools/install.sh --copy`
+strips them out of the copy it makes.
 
 ## Hard rules
 

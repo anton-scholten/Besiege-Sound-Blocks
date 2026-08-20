@@ -64,10 +64,10 @@ since none of them apply.
 
 No rebuild needed — the clip list lives in the block's XML.
 
-1. Drop an `.ogg` in `Resources/Sounds/`.
-2. Declare it in `Mod.xml`:
+1. Drop an `.ogg` in `SoundBlocks/Resources/Sounds/`.
+2. Declare it in `SoundBlocks/Mod.xml`:
    `<AudioClip name="MySound" path="Sounds\MySound.ogg" />`
-3. **Append** it to `<Sounds>` in `SoundBlock.xml`:
+3. **Append** it to `<Sounds>` in `SoundBlocks/SoundBlock.xml`:
    `<AudioClip name="MySound" />`
 
 Append, do not insert. A machine saves its choice as an index into that list, so
@@ -75,7 +75,7 @@ inserting anywhere but the end repoints every already-saved block at a different
 sound.
 
 A custom Special Mode is the same idea with three clips. Declare all three in
-`Mod.xml`, then add the mode to `<CustomMode>` in `SoundBlock.xml`:
+`Mod.xml`, then add the mode to `<CustomMode>` in `SoundBlocks/SoundBlock.xml`:
 
 ```xml
 <Mode name="MyMode" Sound_1="ClipA" Sound_2="ClipB" Sound_3="ClipC" />
