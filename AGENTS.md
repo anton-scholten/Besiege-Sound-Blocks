@@ -226,13 +226,36 @@ build-area blocks during simulation — a loop hosted on the block died on the
 first simulate and never came back. The host is a `DontDestroyOnLoad` object
 created in `Mod.OnLoad`.
 
-**Work in world units.** `Top`/`Bottom` are world-space edges and rows are
-contiguous: one row's `Bottom` is the next one's `Top`, `position.y` is the
-midpoint, `Height` the difference. But `localPosition` is in a *different* scale
-— the rows' parent is scaled 0.9, so a local pitch of 0.6 is a world pitch of
-0.54. Mixing them is wrong by 10% per row and compounds down the stack. `Apply`
-measures the mapping from two real rows and converts back only at the end; widths
-alone stay local.
+**Let Besiege place the rows: assign `Top`, and nothing else.**
+`ContainerDetails.set_Top` is a placement function, not a field — it sets
+`transform.position` to `value - TopOffset`, taking x from `BackgroundPos`.
+`Apply` used to compute that position itself, in world units, through a
+local↔world mapping measured from two live rows. Assigning `Top` gets the same
+answer from the game's own arithmetic and deleted the mapping, `SetWorldCentre`
+and `MeasureMapping` with it.
+
+Do **not** also assign `Bottom`. It is a second `set_position`, derived from
+`BottomOffset`, and agrees with `Top` only while the row's height is exactly the
+one used to place it — not so for the shorter half of a mismatched pair.
+
+**Only move rows you own.** `get_Top` reads `Background.position` while `set_Top`
+writes `transform.position`, so reading a row's `Top` and writing it straight back
+is a no-op only while those two agree. Measured, they do on every row the mapper
+builds normally — each reports `TopOffset` of exactly `Height / 2`. The key row is
+where it stops holding: `KeyContainer` overrides `GetHeight` to take the height
+from `MKey.VariableMapperHeight` once the key is in variable mode, and
+`KeySelector.ExpandBackgroundToMapperHeight` rescales the selector's own plate to
+match. `Apply` was starting its cursor at `stack[0].Top` — the key row — and
+writing `Top` back onto it every frame, which walked it downwards and opened a
+band of empty panel above it as soon as the variable selector was switched on.
+
+`BuildOutput` now reports `firstOwned`, and the restack starts at the `Bottom` of
+the row before it. Everything above is Besiege's. The cursor still follows them,
+because a row that grows moves its own `Bottom`.
+
+(An earlier note here claimed `TopOffset` is `0` for a container with an `Anchor`.
+The IL reads that way, but every row in a live mapper reports `Height / 2`. Trust
+the measurement.)
 
 ### The panel sizes itself to its content; nothing scrolls
 
@@ -327,12 +350,44 @@ compacted.
 
 ### When it goes wrong, measure
 
-The model above was established by logging every row's identity, position,
-`Top`/`Bottom`/`Height` and background scale from a running mapper, after two
-attempts at guessing the geometry both produced overlapping rows. Do that again
-before adjusting anything by eye — a `Debug.Log` loop over
-`mapper.GetComponentsInChildren<ContainerDetails>(true)` is the whole of it — so
-the arithmetic can be checked on paper against real numbers.
+Every fix in this file that worked came from logging a running mapper; every one
+that came from reasoning about the IL alone was wrong at least once. A `Debug.Log`
+loop over `mapper.GetComponentsInChildren<ContainerDetails>(true)`, printing each
+row's identity, `Top`/`Bottom`/`Height`, `transform.position.y` and
+`Background.position.y`, is the whole of it.
+
+Log on **change**, not once per mapper open. Opening the key's variable selector
+alters the layout without reopening the mapper, so a once-per-open dump captures
+only the state before the thing being investigated — which cost two rounds here.
+Key the dump on a signature of the row count and heights.
+
+### Keys can be played by something other than a key
+
+`MKey.Value`, `IsPressed`, `IsDown` and `IsReleased` walk `_keyCodes` and ask the
+input controller — the *physical* keys, nothing else. Besiege's variables and its
+emulator blocks drive a key by raising a separate emulation count those
+properties never consult, so a block reading them alone can only be played by
+hand. Pair each with its twin — `EmulationValue`, `EmulationPressed`,
+`EmulationReleased`, `EmulationHeld(true)` — which is the game's own idiom, as in
+`ShootingModuleBehaviour.SimulateUpdateAlways`.
+
+**Read the emulated edges from the framework's own pass, not from Update.**
+`Machine.FixedUpdate` calls `SendEmulationUpdateBlock` on every block first, so
+each emulator and variable has raised its count, then `EmulationUpdateBlock` on
+everything registered — which for a modded block is always, since
+`BlockPrefabCreator.SetupBehaviour` sets `RegisterEmulationUpdate`
+unconditionally. `ModBlockBehaviourHandler` forwards that to
+`ModBlockBehaviour.KeyEmulationUpdate`, which is the hook to override.
+
+The cadence is why it matters. `MKey.CheckEmulation` latches `wasEmulating`
+against `Time.fixedTime`, so an edge exists for exactly one fixed step.
+`SimulateUpdateAlways` is an Update: at a high frame rate it runs several times
+per fixed step and reports the same press over and over; when frames are long it
+can skip a fixed step entirely and miss one. `KeyEmulationUpdate` latches the
+edges into pending flags, and `ReadKey` — first thing in
+`SimulateUpdateAlways`, ahead of its early returns — ORs them with the physical
+keys and clears them, so each is consumed exactly once. The physical half stays
+in Update, where `Input.GetKeyDown` edges belong.
 
 ## Known, and not this mod's to fix
 

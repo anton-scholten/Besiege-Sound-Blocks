@@ -61,6 +61,21 @@ namespace SoundBlocksMod
         private FireController fireController;
         private bool searchedForFire;
 
+        // This frame's key state, physical or emulated. Sampled once, at the top
+        // of SimulateUpdateAlways.
+        private float keyValue;
+        private bool keyPressed;
+        private bool keyDown;
+        private bool keyReleased;
+
+        // The emulated half, filled in by the framework's own emulation pass and
+        // consumed by the next SimulateUpdateAlways. The edges are latched rather
+        // than read live: the two run at different rates.
+        private bool emulatedPressPending;
+        private bool emulatedReleasePending;
+        private bool emulatedDown;
+        private float emulatedValue;
+
         private Vector3 prevPos;
         private Vector3 velocityVector;
         private MValue MinPitch;
@@ -312,6 +327,10 @@ namespace SoundBlocksMod
             SpeedUp = 0f;
             PitchFactor = 1f;
             BurningNow = false;
+            emulatedPressPending = false;
+            emulatedReleasePending = false;
+            emulatedDown = false;
+            emulatedValue = 0f;
             PlayingToggleAudio = false;
             SpecialFlag = false;
             prevPos = gameObject.transform.position;
@@ -348,6 +367,8 @@ namespace SoundBlocksMod
 
         public override void SimulateUpdateAlways()
         {
+            ReadKey();
+
             // One-time setup, deferred to the second simulated frame: the mapper's
             // values are not settled in the first one.
             if (!hasStarted)
@@ -472,8 +493,7 @@ namespace SoundBlocksMod
                 return;
             }
 
-            float input = PlayKey.Value;
-            if (PlayKey.IsPressed)
+            if (keyPressed)
             {
                 if (PlayingToggleAudio)
                 {
@@ -490,7 +510,7 @@ namespace SoundBlocksMod
                 }
             }
 
-            if (input == 0f)
+            if (keyValue == 0f)
             {
                 if (source_audio.isPlaying)
                 {
@@ -569,6 +589,59 @@ namespace SoundBlocksMod
             }
         }
 
+        /// <summary>
+        /// Besiege's own emulation pass, and the only place the emulated edges are
+        /// worth reading.
+        ///
+        /// `Machine.FixedUpdate` runs this once per fixed step, and in order: every
+        /// block's `SendEmulationUpdateBlock` first, so each emulator and each
+        /// variable has raised its count, then `EmulationUpdateBlock` on everything
+        /// registered for it -- which for a modded block is always, since
+        /// `BlockPrefabCreator.SetupBehaviour` sets `RegisterEmulationUpdate`
+        /// unconditionally. `ModBlockBehaviourHandler` forwards that to here.
+        ///
+        /// The cadence is the point. `MKey.CheckEmulation` latches its previous
+        /// state against `Time.fixedTime`, so an edge exists for exactly one fixed
+        /// step. `SimulateUpdateAlways` is an Update: it can run several times in
+        /// one fixed step, seeing the same press again and again, or none at all,
+        /// missing it entirely. Reading here and latching for the next Update is
+        /// what makes a variable-driven block behave like a played one.
+        /// </summary>
+        public override void KeyEmulationUpdate()
+        {
+            if (PlayKey.EmulationPressed())
+            {
+                emulatedPressPending = true;
+            }
+            if (PlayKey.EmulationReleased())
+            {
+                emulatedReleasePending = true;
+            }
+            emulatedDown = PlayKey.EmulationHeld(true);
+            emulatedValue = PlayKey.EmulationValue();
+        }
+
+        /// <summary>
+        /// This frame's key state, the keyboard ORed with the emulation latched
+        /// above. `MKey.Value`, `IsPressed`, `IsDown` and `IsReleased` walk
+        /// `_keyCodes` and ask the input controller, and never look at the
+        /// emulation count; pairing each with its emulated twin is the game's own
+        /// idiom, as in ShootingModuleBehaviour.
+        ///
+        /// Called at the top of SimulateUpdateAlways, ahead of its early returns,
+        /// so a pending edge is consumed on the very next frame and never twice.
+        /// The physical half stays in Update, where key edges belong.
+        /// </summary>
+        private void ReadKey()
+        {
+            keyValue = emulatedValue > PlayKey.Value ? emulatedValue : PlayKey.Value;
+            keyPressed = PlayKey.IsPressed || emulatedPressPending;
+            keyReleased = PlayKey.IsReleased || emulatedReleasePending;
+            keyDown = PlayKey.IsDown || emulatedDown;
+            emulatedPressPending = false;
+            emulatedReleasePending = false;
+        }
+
         /// <summary>Clamps <paramref name="value"/> into [min, max].</summary>
         private static float Between(float value, float min, float max)
         {
@@ -607,7 +680,7 @@ namespace SoundBlocksMod
         /// </summary>
         private void SpecialModePlayer()
         {
-            if (PlayKey.IsPressed)
+            if (keyPressed)
             {
                 source_audio.Stop();
                 source_audio.clip = SpecialClip1;
@@ -616,7 +689,7 @@ namespace SoundBlocksMod
                 SpecialFlag = true;
             }
 
-            if (PlayKey.IsDown)
+            if (keyDown)
             {
                 if (SpecialFlag && !source_audio.isPlaying)
                 {
@@ -627,7 +700,7 @@ namespace SoundBlocksMod
                 }
             }
 
-            if (PlayKey.IsReleased)
+            if (keyReleased)
             {
                 source_audio.clip = SpecialClip3;
                 source_audio.loop = false;

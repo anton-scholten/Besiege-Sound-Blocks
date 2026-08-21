@@ -1,7 +1,7 @@
 <Mod>
 	<Name>Sound Blocks</Name>
 	<Author>wizz6rd</Author>
-	<Version>0.3.4</Version>
+	<Version>0.3.5</Version>
 	
 	<Description>
 	Adds a block to play preloaded sounds upon key press.

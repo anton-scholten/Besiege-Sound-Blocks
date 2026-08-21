@@ -10,6 +10,14 @@
   values. Sliders from 0 to 1, both at 1 by default, which is no effect, so
   nothing already built changes how it sounds.
 
+**Fixed**
+
+- The block ignored Besiege's variables, and the emulator blocks with them: it
+  could only be played by an actual keypress. `MKey.Value`, `IsPressed`, `IsDown`
+  and `IsReleased` read the physical keys alone, so each is now paired with its
+  emulated twin, taken from Besiege's own emulation pass so a variable-driven
+  press fires exactly once however the frame rate falls.
+
 **Changed**
 
 - The mod now lives in a `SoundBlocks/` subfolder rather than being the whole

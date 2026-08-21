@@ -9,14 +9,21 @@ namespace SoundBlocksMod
     /// has already built. No reflection -- everything used here is public, which
     /// is what keeps the assembly loadable.
     ///
-    /// The layout model, measured from a running mapper rather than assumed:
+    /// The layout model:
     ///
     ///   * Rows stack contiguously by `Top`/`Bottom`, world-space edges: one
-    ///     row's `Bottom` is the next one's `Top`, `position.y` their midpoint,
-    ///     `Height` the difference.
-    ///   * `localPosition` is in another scale (the rows' parent is scaled 0.9),
-    ///     so vertical work is done in world units and converted back through a
-    ///     measured mapping. Only widths are local.
+    ///     row's `Bottom` is the next one's `Top`, `Height` the difference.
+    ///   * **Placement is Besiege's.** Assigning `Top` moves the container to
+    ///     `value - TopOffset`, which is the game's own arithmetic; working the
+    ///     position out here instead, through a hand-measured local-to-world
+    ///     mapping, was only ever a way of getting the same answer less
+    ///     reliably.
+    ///   * `get_Top` reads `Background.position`, `set_Top` writes
+    ///     `transform.position`. Those agree on every row the mapper builds
+    ///     normally -- measured, they do -- so reading and writing `Top` is
+    ///     safe on them, and only on them. See `Apply`.
+    ///   * Only the two-column widths and offsets are done here, and those are
+    ///     local, because `Background.localScale` is.
     ///   * A hidden widget gets no container at all.
     ///
     /// One mapper serves every block and pools its rows, so `Restore` hands back
@@ -49,8 +56,6 @@ namespace SoundBlocksMod
         private static float buttonShift;
         private static bool buttonsKnown;
         private static Transform contentMask;
-        private static float contentEnd;
-        private static bool dumped;
 
         /// <summary>
         /// Driven once a frame by MapperLayoutHost. Every frame, not once per
@@ -120,7 +125,6 @@ namespace SoundBlocksMod
             closeButton = ButtonTransform(mapper.CloseButton);
             resetButton = ButtonTransform(mapper.ResetButton);
             buttonsKnown = false;
-            dumped = false;
 
             scrollbar = mapper.GetComponentInChildren<UIScrollbar>(true);
             contentMask = null;
@@ -169,7 +173,7 @@ namespace SoundBlocksMod
                     stack.Add(c);
                 }
             }
-            if (stack.Count < 2)
+            if (stack.Count == 0)
             {
                 return;
             }
@@ -178,16 +182,9 @@ namespace SoundBlocksMod
             // so this is the order the mapper drew them in.
             SortByTopDescending(stack);
 
-            // The local <-> world mapping, measured rather than assumed:
-            // worldY = scale * localY + offset.
-            float scale, offset;
-            if (!MeasureMapping(stack, out scale, out offset))
-            {
-                return;
-            }
-
             // Group the stack into output rows.
-            List<ContainerDetails[]> output = BuildOutput(stack, rows);
+            int firstOwned;
+            List<ContainerDetails[]> output = BuildOutput(stack, rows, out firstOwned);
             if (output == null)
             {
                 return;
@@ -208,11 +205,25 @@ namespace SoundBlocksMod
                 }
             }
 
-            // Restack contiguously from where the stack already began, so the
-            // header and anything above the toggles land exactly where they were.
-            float cursor = stack[0].Top;
+            // Everything above the first row of ours is Besiege's to place and is
+            // left alone; the restack begins at the bottom of the last of them.
+            //
+            // Not merely tidiness. `get_Top` reads `Background.position` while
+            // `set_Top` writes `transform.position`, so reading a row's Top and
+            // writing it back is only a no-op while those two agree. The key row
+            // is where that stops holding: its KeyContainer overrides GetHeight to
+            // take the height from `VariableMapperHeight` once the key is in
+            // variable mode, and `ExpandBackgroundToMapperHeight` rescales the
+            // selector's own plate to match. Doing that round trip on it every
+            // frame walked the row down and opened a gap above it.
+            //
+            // The cursor still follows those rows: one that grows moves its own
+            // Bottom, so everything below shifts by exactly as much.
+            float cursor = firstOwned > 0
+                ? output[firstOwned - 1][0].Bottom
+                : stack[0].Top;
 
-            for (int i = 0; i < output.Count; i++)
+            for (int i = firstOwned; i < output.Count; i++)
             {
                 ContainerDetails[] row = output[i];
 
@@ -226,14 +237,16 @@ namespace SoundBlocksMod
                 }
 
                 float top = cursor;
-                float bottom = cursor - height;
-                float centre = (top + bottom) * 0.5f;
 
                 for (int j = 0; j < row.Length; j++)
                 {
+                    // Besiege's own placement, offsets and all.
+                    //
+                    // `Bottom` is deliberately not written as well: it is a second
+                    // call to set_position, derived from BottomOffset, and agrees
+                    // with Top only while the row's height is the one used to
+                    // place it -- not so for the shorter half of a mismatched pair.
                     row[j].Top = top;
-                    row[j].Bottom = bottom;
-                    SetWorldCentre(row[j], centre, scale, offset);
                 }
 
                 if (row.Length == 2)
@@ -241,19 +254,12 @@ namespace SoundBlocksMod
                     SideBySide(row[0], row[1], fullWidth, centreX);
                 }
 
-                cursor = bottom;
+                cursor -= height;
             }
 
-            contentEnd = cursor;
             FitPanel(mapper, cursor);
             Remeasure();
             PlaceButtons();
-
-            if (!dumped)
-            {
-                dumped = true;
-                Dump(mapper, stack);
-            }
         }
 
         /// <summary>
@@ -487,10 +493,13 @@ namespace SoundBlocksMod
         /// <summary>
         /// The output row order: rows this does not own keep their place and
         /// order; the owned ones go in as a block, where the first of them was.
+        /// <paramref name="firstOwned"/> is where that block starts, which is also
+        /// the first row the caller is allowed to move.
         /// </summary>
         private static List<ContainerDetails[]> BuildOutput(
-            List<ContainerDetails> stack, List<MapperType[]> rows)
+            List<ContainerDetails> stack, List<MapperType[]> rows, out int firstOwned)
         {
+            firstOwned = 0;
             // Resolve the wanted rows against what is actually on screen.
             List<ContainerDetails[]> wanted = new List<ContainerDetails[]>();
             List<ContainerDetails> mine = new List<ContainerDetails>();
@@ -526,6 +535,7 @@ namespace SoundBlocksMod
                     if (!placed)
                     {
                         placed = true;
+                        firstOwned = output.Count;
                         for (int j = 0; j < wanted.Count; j++)
                         {
                             output.Add(wanted[j]);
@@ -574,45 +584,6 @@ namespace SoundBlocksMod
             right.transform.localPosition = new Vector3(centre + shift, rp.y, rp.z);
         }
 
-        /// <summary>Moves a row so its world-space midpoint lands on <paramref name="centre"/>.</summary>
-        private static void SetWorldCentre(ContainerDetails c, float centre, float scale, float offset)
-        {
-            Vector3 p = c.transform.localPosition;
-            c.transform.localPosition = new Vector3(p.x, (centre - offset) / scale, p.z);
-        }
-
-        // ---- measurement -----------------------------------------------------
-
-        /// <summary>
-        /// Solves worldY = scale * localY + offset from two rows at different
-        /// heights. Measured, because the rows' parent is scaled by an amount
-        /// that is not a mod's to assume.
-        /// </summary>
-        private static bool MeasureMapping(List<ContainerDetails> stack, out float scale, out float offset)
-        {
-            scale = 1f;
-            offset = 0f;
-            ContainerDetails a = stack[0];
-            for (int i = 1; i < stack.Count; i++)
-            {
-                ContainerDetails b = stack[i];
-                float dLocal = a.transform.localPosition.y - b.transform.localPosition.y;
-                if (dLocal > 0.0001f || dLocal < -0.0001f)
-                {
-                    float aCentre = (a.Top + a.Bottom) * 0.5f;
-                    float bCentre = (b.Top + b.Bottom) * 0.5f;
-                    scale = (aCentre - bCentre) / dLocal;
-                    if (scale > -0.0001f && scale < 0.0001f)
-                    {
-                        return false;
-                    }
-                    offset = aCentre - scale * a.transform.localPosition.y;
-                    return true;
-                }
-            }
-            return false;
-        }
-
         private static void SortByTopDescending(List<ContainerDetails> list)
         {
             for (int i = 1; i < list.Count; i++)
@@ -658,47 +629,6 @@ namespace SoundBlocksMod
         }
 
         /// <summary>Notes a plate this halved, so Restore can put its width back.</summary>
-        /// <summary>
-        /// One-shot geometry log per mapper open, greppable in Player.log as
-        /// `[SB layout]`. This is what turned the layout from guesswork into
-        /// arithmetic; leave it in until the pane is settled.
-        /// </summary>
-        private static void Dump(BlockMapper mapper, List<ContainerDetails> stack)
-        {
-            Debug.Log("[SB layout] ---- " + stack.Count + " rows, mapperScale="
-                + mapper.transform.localScale + " ----");
-            for (int i = 0; i < stack.Count; i++)
-            {
-                ContainerDetails c = stack[i];
-                string who = "(none)";
-                if (c.selector != null && c.selector.MapperType != null)
-                {
-                    who = c.selector.MapperType.Key;
-                }
-                Debug.Log("[SB layout] " + i + " " + who
-                    + " Top=" + c.Top + " Bottom=" + c.Bottom + " H=" + c.Height);
-            }
-            Debug.Log("[SB layout] contentEnd=" + contentEnd);
-            if (background != null && background.T != null)
-            {
-                Debug.Log("[SB layout] bg localY=" + background.T.localScale.y
-                    + " posY=" + background.T.position.y
-                    + " lossyY=" + background.T.lossyScale.y
-                    + " fullLocalY=" + background.FullLocalY);
-            }
-            if (contentMask != null)
-            {
-                Debug.Log("[SB layout] mask localY=" + contentMask.localScale.y
-                    + " posY=" + contentMask.position.y
-                    + " lossyY=" + contentMask.lossyScale.y
-                    + " bottom=" + (contentMask.position.y - contentMask.lossyScale.y * 0.5f));
-            }
-            if (scrollbar != null)
-            {
-                Debug.Log("[SB layout] scrollbar.active=" + scrollbar.active);
-            }
-        }
-
         private static void RecordHalved(Transform background, float full, float halved)
         {
             for (int i = 0; i < saved.Count; i++)
