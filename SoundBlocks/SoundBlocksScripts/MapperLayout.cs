@@ -246,7 +246,28 @@ namespace SoundBlocksMod
                     // call to set_position, derived from BottomOffset, and agrees
                     // with Top only while the row's height is the one used to
                     // place it -- not so for the shorter half of a mismatched pair.
+                    //
+                    // `Z` is saved and put back because `set_Top` destroys it.
+                    // It assigns `transform.position` through the *two*-argument
+                    // Vector3 constructor, so the row's z becomes 0 rather than
+                    // staying where the mapper put it -- and z is the whole of a
+                    // row's depth, this being mesh UI in world space.
+                    //
+                    // Besiege never suffers from it because WidgetController
+                    // pairs the two: every `Top =` in its own layout loop is
+                    // immediately followed by `Z = widgetContainer.ZValue()`,
+                    // which for the mapper is its own z less 0.1. Writing Top
+                    // without it leaves the rows this mod moved at a different
+                    // depth from everything it did not, which is what put an open
+                    // sound menu's option list behind the toggles below it.
+                    //
+                    // Reading it back per row rather than calling
+                    // `mapper.ZValue()` keeps this right for a row owned by a
+                    // nested controller, whose depth comes from its own container
+                    // instead.
+                    float z = row[j].Z;
                     row[j].Top = top;
+                    row[j].Z = z;
                 }
 
                 if (row.Length == 2)
