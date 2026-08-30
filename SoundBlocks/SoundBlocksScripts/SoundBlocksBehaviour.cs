@@ -365,6 +365,53 @@ namespace SoundBlocksMod
             }
         }
 
+        /// <summary>
+        /// Besiege's master volume, when the game is not applying it to this block.
+        ///
+        /// Besiege has two kinds of volume control and they arrive by different
+        /// routes. The per-category sliders -- BLOCKS, SFX, MUSIC -- are exposed
+        /// parameters on an `AudioMixer`, written every frame by
+        /// `MusicController.LateUpdate`, and they reach this block because its
+        /// `AudioSource` is routed through a mixer group as any block's is. The
+        /// **master** slider is not: it sets `AudioListener.volume`
+        /// (`OptionsMaster.SetMasterVolume`, and the slider's own callback), and
+        /// Unity does not apply that to audio coming out of a mixer. So the one
+        /// slider a player reaches for first did nothing to these blocks, while the
+        /// others worked -- which reads as the mod ignoring the setting.
+        ///
+        /// So the block applies it, and only where the game does not: a source with
+        /// no mixer group is one the listener's own volume still scales, and
+        /// applying it there as well would work the slider twice.
+        ///
+        /// The same hole is in any mod that gives a block an `AudioSource`; it is
+        /// fixed the same way in Orchestra and Braids Synth.
+        /// </summary>
+        private float MasterVolume()
+        {
+            if (source_audio == null || source_audio.outputAudioMixerGroup == null)
+            {
+                return 1f;
+            }
+            BesiegeConfig config = OptionsMaster.BesiegeConfig;
+            if (config == null)
+            {
+                return 1f;
+            }
+            if (!saidMaster)
+            {
+                saidMaster = true;
+                ModConsole.Log("The master volume slider does not reach audio "
+                               + "through Besiege's mixer, so the sound blocks "
+                               + "apply it themselves.");
+            }
+            // A percentage, as `OptionsMaster.SetMasterVolume` reads it.
+            return Mathf.Clamp01(config.MasterVolume / 100f);
+        }
+
+        /// <summary>Said once, so the log records which case this install is
+        /// rather than leaving it to be guessed at.</summary>
+        private static bool saidMaster;
+
         public override void SimulateUpdateAlways()
         {
             ReadKey();
@@ -485,7 +532,8 @@ namespace SoundBlocksMod
             // Written every frame rather than once at startup, because the
             // velocity multiplier changes with the block. `burnDrop` carries the
             // burn effect's own reduction, which is in absolute terms.
-            source_audio.volume = Mathf.Max(0f, vol - burnDrop) * velocityVolume;
+            source_audio.volume = Mathf.Max(0f, vol - burnDrop) * velocityVolume
+                                  * MasterVolume();
 
             if (SpecialToggle.IsActive)
             {

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+**Fixed**
+
+- **Besiege's master volume slider did not reach the sound blocks.** The
+  per-category sliders do -- BLOCKS and SFX are exposed parameters on an
+  `AudioMixer`, and a block's `AudioSource` is routed through a mixer group -- but
+  the master slider sets `AudioListener.volume`, and Unity does not apply that to
+  audio coming out of a mixer. So the one slider a player reaches for first did
+  nothing while the others worked. The block applies it itself now, read from
+  `OptionsMaster.BesiegeConfig.MasterVolume` in the same per-frame place the volume
+  is already written, and only where the game does not: a source with no mixer
+  group is still scaled by the listener, and applying it there too would work the
+  slider twice. The same hole is in any mod that gives a block an `AudioSource` --
+  fixed alongside this in Orchestra and Braids Synth.
+
 **Added**
 
 - **Min velocity volume** and **Max velocity volume**, alongside the pitch pair.
