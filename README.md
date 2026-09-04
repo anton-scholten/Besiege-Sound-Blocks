@@ -1,8 +1,8 @@
 # Besiege Sound Blocks
 
-A block that plays sounds, in [Besiege](https://store.steampowered.com/app/346010/Besiege/).
+<img src="SoundBlocks/Resources/SoundBlocks.png" alt="thumbnail" width="200" align="right">
 
-![The Sound Block on a machine, with its options open on Bike Horn](Promo_1.jpg)
+A block that plays sounds, in [Besiege](https://store.steampowered.com/app/346010/Besiege/).
 
 Pick a clip, map a key, and it plays. Beyond that the block is about *how* it
 plays: hold or toggle, one-shot or looping, pitched by the game's slow-motion,
@@ -11,6 +11,8 @@ with distance. Set it on fire and it winds up and dies like a real speaker.
 
 Multiplayer works — everyone hears everyone's blocks. Custom sounds don't travel,
 so only players who have the same files hear those.
+
+<br clear="right">
 
 ## Install
 
@@ -25,6 +27,8 @@ Either subscribe to the mod on Steam, or if you don't use Steam you can clone th
 Set `BESIEGE_DIR` if your install isn't found automatically. Start Besiege, enable **Sound Blocks** in the mods menu, and the Sound Block appears in the block toolbar. No C# toolchain is needed, the build uses Besiege's own compiler.
 
 ## Options
+
+![The Sound Block on a machine, with its options open on Bike Horn](Promo_1.jpg)
 
 The pane sizes itself to what is showing: turning on **Distance** or a velocity
 mode adds its slider and the window grows, and it shrinks again when they go.
@@ -105,3 +109,7 @@ of the mod, so commit it.
 Details land in `Player.log` and in the in-game console with `show_logs true`.
 
 AI agent? see [AGENTS.md](AGENTS.md) for layout, build, and any relevant info.
+
+## Licence
+
+GPL-3.0. Besiege is Spiderling Studios'; nothing of theirs is redistributed here.
